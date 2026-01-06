@@ -15,6 +15,12 @@ pub enum FuzzStrategy {
     MalformedXml,
     ExtremeValues,
     BoundaryValues,
+    ViolateMinOccurs,
+    ViolateMaxOccurs,
+    ViolateMinLength,
+    ViolateMaxLength,
+    ViolateMinInclusive,
+    ViolateMaxInclusive,
 }
 
 pub struct XmlFuzzer {
@@ -47,6 +53,12 @@ impl XmlFuzzer {
             FuzzStrategy::MalformedXml => self.fuzz_malformed_xml(root_element),
             FuzzStrategy::ExtremeValues => self.fuzz_extreme_values(root_element),
             FuzzStrategy::BoundaryValues => self.fuzz_boundary_values(root_element),
+            FuzzStrategy::ViolateMinOccurs => self.fuzz_violate_min_occurs(root_element),
+            FuzzStrategy::ViolateMaxOccurs => self.fuzz_violate_max_occurs(root_element),
+            FuzzStrategy::ViolateMinLength => self.fuzz_violate_min_length(root_element),
+            FuzzStrategy::ViolateMaxLength => self.fuzz_violate_max_length(root_element),
+            FuzzStrategy::ViolateMinInclusive => self.fuzz_violate_min_inclusive(root_element),
+            FuzzStrategy::ViolateMaxInclusive => self.fuzz_violate_max_inclusive(root_element),
         }
     }
 
@@ -61,6 +73,12 @@ impl XmlFuzzer {
             FuzzStrategy::InvalidType,
             FuzzStrategy::ExtremeValues,
             FuzzStrategy::BoundaryValues,
+            FuzzStrategy::ViolateMinOccurs,
+            FuzzStrategy::ViolateMaxOccurs,
+            FuzzStrategy::ViolateMinLength,
+            FuzzStrategy::ViolateMaxLength,
+            FuzzStrategy::ViolateMinInclusive,
+            FuzzStrategy::ViolateMaxInclusive,
         ];
 
         strategies
@@ -346,6 +364,237 @@ impl XmlFuzzer {
             }
         }
     }
+
+    fn fuzz_violate_min_occurs(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Find elements with minOccurs > 0 and remove instances to violate minOccurs
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_min_occurs_recursive(&mut xml, &elem_clone);
+        }
+        
+        xml
+    }
+
+    fn fuzz_violate_max_occurs(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Find elements with maxOccurs and add more instances to violate maxOccurs
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_max_occurs_recursive(&mut xml, &elem_clone);
+        }
+        
+        xml
+    }
+
+    fn fuzz_violate_min_length(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Find string values with minLength restrictions and make them too short
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_length_constraints(&mut xml, &elem_clone, true);
+        }
+        
+        xml
+    }
+
+    fn fuzz_violate_max_length(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Find string values with maxLength restrictions and make them too long
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_length_constraints(&mut xml, &elem_clone, false);
+        }
+        
+        xml
+    }
+
+    fn fuzz_violate_min_inclusive(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Find numeric values with minInclusive and make them below the minimum
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_inclusive_constraints(&mut xml, &elem_clone, true);
+        }
+        
+        xml
+    }
+
+    fn fuzz_violate_max_inclusive(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Find numeric values with maxInclusive and make them above the maximum
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_inclusive_constraints(&mut xml, &elem_clone, false);
+        }
+        
+        xml
+    }
+
+    fn violate_min_occurs_recursive(&mut self, xml: &mut String, element: &XsdElement) {
+        let min_occurs = element.min_occurs.unwrap_or(1);
+        
+        if min_occurs > 0 {
+            // Remove instances to violate minOccurs
+            for child_name in &element.children {
+                if let Some(child_elem) = self.schema.get_element(child_name) {
+                    let child_min = child_elem.min_occurs.unwrap_or(1);
+                    if child_min > 0 {
+                        // Count occurrences and remove some to violate minOccurs
+                        let pattern = format!("<{}>", child_name);
+                        let count = xml.matches(&pattern).count();
+                        if count >= child_min as usize {
+                            // Remove one instance to violate minOccurs
+                            let re = Regex::new(&format!(r"<{}>.*?</{}>", child_name, child_name)).unwrap();
+                            if let Some(first_match) = re.find(&xml) {
+                                let start = first_match.start();
+                                let end = first_match.end();
+                                xml.replace_range(start..end, "");
+                            }
+                        }
+                    }
+                    let child_clone = child_elem.clone();
+                    self.violate_min_occurs_recursive(xml, &child_clone);
+                }
+            }
+        }
+    }
+
+    fn violate_max_occurs_recursive(&mut self, xml: &mut String, element: &XsdElement) {
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let max_occurs = child_elem.max_occurs.unwrap_or(1);
+                if max_occurs != u32::MAX {
+                    // Count occurrences and add more to violate maxOccurs
+                    let pattern = format!("<{}>", child_name);
+                    let count = xml.matches(&pattern).count();
+                    if count < max_occurs as usize {
+                        // Add extra instances to violate maxOccurs
+                        let extra_count = (max_occurs as usize - count) + 1;
+                        let extra_elem = format!("<{}>extra_value</{}>\n", child_name, child_name);
+                        let insert_pos = xml.find("</").unwrap_or(xml.len() - 10);
+                        for _ in 0..extra_count {
+                            xml.insert_str(insert_pos, &extra_elem);
+                        }
+                    }
+                    let child_clone = child_elem.clone();
+                    self.violate_max_occurs_recursive(xml, &child_clone);
+                }
+            }
+        }
+    }
+
+    fn violate_length_constraints(&mut self, xml: &mut String, element: &XsdElement, is_min: bool) {
+        if let Some(typ) = self.schema.get_type(&element.element_type) {
+            if let Some(ref restriction) = typ.restriction {
+                if restriction.base == "xs:string" || restriction.base == "string" {
+                    if is_min {
+                        if let Some(min_len) = restriction.min_length {
+                            // Make strings shorter than minLength
+                            let re = Regex::new(r#">([^<]+)</"#).unwrap();
+                            *xml = re.replace_all(xml, |caps: &regex::Captures| -> String {
+                                let value = &caps[1];
+                                if value.len() >= min_len as usize {
+                                    format!(">{}</", "x".repeat((min_len as usize).saturating_sub(1)))
+                                } else {
+                                    caps[0].to_string()
+                                }
+                            }).to_string();
+                        }
+                    } else {
+                        if let Some(max_len) = restriction.max_length {
+                            // Make strings longer than maxLength
+                            let re = Regex::new(r#">([^<]+)</"#).unwrap();
+                            *xml = re.replace_all(xml, |caps: &regex::Captures| -> String {
+                                let value = &caps[1];
+                                if value.len() <= max_len as usize {
+                                    format!(">{}</", "x".repeat(max_len as usize + 100))
+                                } else {
+                                    caps[0].to_string()
+                                }
+                            }).to_string();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Recursively fuzz children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_length_constraints(xml, &child_clone, is_min);
+            }
+        }
+    }
+
+    fn violate_inclusive_constraints(&mut self, xml: &mut String, element: &XsdElement, is_min: bool) {
+        if let Some(typ) = self.schema.get_type(&element.element_type) {
+            if let Some(ref restriction) = typ.restriction {
+                match restriction.base.as_str() {
+                    "xs:int" | "xs:integer" | "int" | "integer" => {
+                        if is_min {
+                            if let Some(min_val) = &restriction.min_inclusive {
+                                if let Ok(min_int) = min_val.parse::<i32>() {
+                                    // Replace with value below minimum
+                                    let re = Regex::new(r"\d+").unwrap();
+                                    *xml = re.replace_all(xml, |_caps: &regex::Captures| -> String {
+                                        (min_int - 1).to_string()
+                                    }).to_string();
+                                }
+                            }
+                        } else {
+                            if let Some(max_val) = &restriction.max_inclusive {
+                                if let Ok(max_int) = max_val.parse::<i32>() {
+                                    // Replace with value above maximum
+                                    let re = Regex::new(r"\d+").unwrap();
+                                    *xml = re.replace_all(xml, |_caps: &regex::Captures| -> String {
+                                        (max_int + 1).to_string()
+                                    }).to_string();
+                                }
+                            }
+                        }
+                    }
+                    "xs:decimal" | "xs:double" | "xs:float" => {
+                        if is_min {
+                            if let Some(min_val) = &restriction.min_inclusive {
+                                if let Ok(min_float) = min_val.parse::<f64>() {
+                                    let re = Regex::new(r"\d+\.\d+").unwrap();
+                                    *xml = re.replace_all(xml, |_caps: &regex::Captures| -> String {
+                                        format!("{:.2}", min_float - 1.0)
+                                    }).to_string();
+                                }
+                            }
+                        } else {
+                            if let Some(max_val) = &restriction.max_inclusive {
+                                if let Ok(max_float) = max_val.parse::<f64>() {
+                                    let re = Regex::new(r"\d+\.\d+").unwrap();
+                                    *xml = re.replace_all(xml, |_caps: &regex::Captures| -> String {
+                                        format!("{:.2}", max_float + 1.0)
+                                    }).to_string();
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Recursively fuzz children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_inclusive_constraints(xml, &child_clone, is_min);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -493,7 +742,7 @@ mod tests {
         let mut fuzzer = XmlFuzzer::new(schema);
         let results = fuzzer.fuzz_all("Person");
         
-        assert_eq!(results.len(), 9, "Should generate all fuzzing strategies");
+        assert_eq!(results.len(), 15, "Should generate all fuzzing strategies");
         for (strategy, xml) in results {
             assert!(!xml.is_empty(), "Strategy {:?} should generate XML", strategy);
             assert!(xml.contains("Person") || xml.contains("<Person"), 
@@ -514,6 +763,100 @@ mod tests {
         // But both should be valid fuzzed XML
         assert!(!xml1.is_empty());
         assert!(!xml2.is_empty());
+    }
+
+    #[test]
+    fn test_fuzz_violate_min_occurs() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateMinOccurs);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_max_occurs() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateMaxOccurs);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_min_length() {
+        let xsd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:simpleType name="NameType">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="5"/>
+      <xs:maxLength value="20"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:element name="Person">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="name" type="NameType"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>"#;
+        
+        let schema = XsdSchema::parse(xsd).unwrap();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateMinLength);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_max_length() {
+        let xsd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:simpleType name="NameType">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="5"/>
+      <xs:maxLength value="20"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:element name="Person">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="name" type="NameType"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>"#;
+        
+        let schema = XsdSchema::parse(xsd).unwrap();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateMaxLength);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_min_inclusive() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateMinInclusive);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_max_inclusive() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateMaxInclusive);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
     }
 
     #[test]
@@ -539,7 +882,7 @@ mod tests {
         let mut fuzzer = XmlFuzzer::new(schema);
         
         let results = fuzzer.fuzz_all("Person");
-        assert_eq!(results.len(), 9);
+        assert_eq!(results.len(), 15, "Should generate all 15 fuzzing strategies");
         
         for (_, xml) in results {
             assert!(!xml.is_empty());

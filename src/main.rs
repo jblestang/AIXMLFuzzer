@@ -45,6 +45,12 @@ enum FuzzStrategyArg {
     MalformedXml,
     ExtremeValues,
     BoundaryValues,
+    ViolateMinOccurs,
+    ViolateMaxOccurs,
+    ViolateMinLength,
+    ViolateMaxLength,
+    ViolateMinInclusive,
+    ViolateMaxInclusive,
     All,
 }
 
@@ -61,6 +67,12 @@ impl From<FuzzStrategyArg> for FuzzStrategy {
             FuzzStrategyArg::MalformedXml => FuzzStrategy::MalformedXml,
             FuzzStrategyArg::ExtremeValues => FuzzStrategy::ExtremeValues,
             FuzzStrategyArg::BoundaryValues => FuzzStrategy::BoundaryValues,
+            FuzzStrategyArg::ViolateMinOccurs => FuzzStrategy::ViolateMinOccurs,
+            FuzzStrategyArg::ViolateMaxOccurs => FuzzStrategy::ViolateMaxOccurs,
+            FuzzStrategyArg::ViolateMinLength => FuzzStrategy::ViolateMinLength,
+            FuzzStrategyArg::ViolateMaxLength => FuzzStrategy::ViolateMaxLength,
+            FuzzStrategyArg::ViolateMinInclusive => FuzzStrategy::ViolateMinInclusive,
+            FuzzStrategyArg::ViolateMaxInclusive => FuzzStrategy::ViolateMaxInclusive,
             FuzzStrategyArg::All => FuzzStrategy::AddElement, // Placeholder
         }
     }
