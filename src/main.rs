@@ -51,6 +51,15 @@ enum FuzzStrategyArg {
     ViolateMaxLength,
     ViolateMinInclusive,
     ViolateMaxInclusive,
+    ViolateMinExclusive,
+    ViolateMaxExclusive,
+    ViolatePattern,
+    ViolateTotalDigits,
+    ViolateFractionDigits,
+    ViolateChoice,
+    ViolateSequenceOrder,
+    ViolateFixedValue,
+    ViolateNillable,
     All,
 }
 
@@ -73,6 +82,15 @@ impl From<FuzzStrategyArg> for FuzzStrategy {
             FuzzStrategyArg::ViolateMaxLength => FuzzStrategy::ViolateMaxLength,
             FuzzStrategyArg::ViolateMinInclusive => FuzzStrategy::ViolateMinInclusive,
             FuzzStrategyArg::ViolateMaxInclusive => FuzzStrategy::ViolateMaxInclusive,
+            FuzzStrategyArg::ViolateMinExclusive => FuzzStrategy::ViolateMinExclusive,
+            FuzzStrategyArg::ViolateMaxExclusive => FuzzStrategy::ViolateMaxExclusive,
+            FuzzStrategyArg::ViolatePattern => FuzzStrategy::ViolatePattern,
+            FuzzStrategyArg::ViolateTotalDigits => FuzzStrategy::ViolateTotalDigits,
+            FuzzStrategyArg::ViolateFractionDigits => FuzzStrategy::ViolateFractionDigits,
+            FuzzStrategyArg::ViolateChoice => FuzzStrategy::ViolateChoice,
+            FuzzStrategyArg::ViolateSequenceOrder => FuzzStrategy::ViolateSequenceOrder,
+            FuzzStrategyArg::ViolateFixedValue => FuzzStrategy::ViolateFixedValue,
+            FuzzStrategyArg::ViolateNillable => FuzzStrategy::ViolateNillable,
             FuzzStrategyArg::All => FuzzStrategy::AddElement, // Placeholder
         }
     }

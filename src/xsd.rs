@@ -338,6 +338,42 @@ impl XsdSchema {
                                 }
                             }
                         }
+                        "pattern" => {
+                            for attr in e.attributes() {
+                                let attr = attr?;
+                                let key = str::from_utf8(attr.key.as_ref())?;
+                                if key == "value" {
+                                    let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                    if let Some(ref mut r) = current_restriction {
+                                        r.pattern = Some(value);
+                                    }
+                                }
+                            }
+                        }
+                        "totalDigits" => {
+                            for attr in e.attributes() {
+                                let attr = attr?;
+                                let key = str::from_utf8(attr.key.as_ref())?;
+                                if key == "value" {
+                                    let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                    if let Some(ref mut r) = current_restriction {
+                                        r.total_digits = value.parse().ok();
+                                    }
+                                }
+                            }
+                        }
+                        "fractionDigits" => {
+                            for attr in e.attributes() {
+                                let attr = attr?;
+                                let key = str::from_utf8(attr.key.as_ref())?;
+                                if key == "value" {
+                                    let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                    if let Some(ref mut r) = current_restriction {
+                                        r.fraction_digits = value.parse().ok();
+                                    }
+                                }
+                            }
+                        }
                         "attribute" => {
                             let mut attr = XsdAttribute {
                                 name: String::new(),

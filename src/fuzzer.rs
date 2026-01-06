@@ -21,6 +21,15 @@ pub enum FuzzStrategy {
     ViolateMaxLength,
     ViolateMinInclusive,
     ViolateMaxInclusive,
+    ViolateMinExclusive,
+    ViolateMaxExclusive,
+    ViolatePattern,
+    ViolateTotalDigits,
+    ViolateFractionDigits,
+    ViolateChoice,
+    ViolateSequenceOrder,
+    ViolateFixedValue,
+    ViolateNillable,
 }
 
 pub struct XmlFuzzer {
@@ -59,6 +68,15 @@ impl XmlFuzzer {
             FuzzStrategy::ViolateMaxLength => self.fuzz_violate_max_length(root_element),
             FuzzStrategy::ViolateMinInclusive => self.fuzz_violate_min_inclusive(root_element),
             FuzzStrategy::ViolateMaxInclusive => self.fuzz_violate_max_inclusive(root_element),
+            FuzzStrategy::ViolateMinExclusive => self.fuzz_violate_min_exclusive(root_element),
+            FuzzStrategy::ViolateMaxExclusive => self.fuzz_violate_max_exclusive(root_element),
+            FuzzStrategy::ViolatePattern => self.fuzz_violate_pattern(root_element),
+            FuzzStrategy::ViolateTotalDigits => self.fuzz_violate_total_digits(root_element),
+            FuzzStrategy::ViolateFractionDigits => self.fuzz_violate_fraction_digits(root_element),
+            FuzzStrategy::ViolateChoice => self.fuzz_violate_choice(root_element),
+            FuzzStrategy::ViolateSequenceOrder => self.fuzz_violate_sequence_order(root_element),
+            FuzzStrategy::ViolateFixedValue => self.fuzz_violate_fixed_value(root_element),
+            FuzzStrategy::ViolateNillable => self.fuzz_violate_nillable(root_element),
         }
     }
 
@@ -79,6 +97,15 @@ impl XmlFuzzer {
             FuzzStrategy::ViolateMaxLength,
             FuzzStrategy::ViolateMinInclusive,
             FuzzStrategy::ViolateMaxInclusive,
+            FuzzStrategy::ViolateMinExclusive,
+            FuzzStrategy::ViolateMaxExclusive,
+            FuzzStrategy::ViolatePattern,
+            FuzzStrategy::ViolateTotalDigits,
+            FuzzStrategy::ViolateFractionDigits,
+            FuzzStrategy::ViolateChoice,
+            FuzzStrategy::ViolateSequenceOrder,
+            FuzzStrategy::ViolateFixedValue,
+            FuzzStrategy::ViolateNillable,
         ];
 
         strategies
@@ -595,6 +622,327 @@ impl XmlFuzzer {
             }
         }
     }
+
+    fn fuzz_violate_min_exclusive(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Find numeric values with minExclusive and make them equal to or below the minimum
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_exclusive_constraints(&mut xml, &elem_clone, true);
+        }
+        
+        xml
+    }
+
+    fn fuzz_violate_max_exclusive(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Find numeric values with maxExclusive and make them equal to or above the maximum
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_exclusive_constraints(&mut xml, &elem_clone, false);
+        }
+        
+        xml
+    }
+
+    fn fuzz_violate_pattern(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Find values with pattern restrictions and violate them
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_pattern_constraints(&mut xml, &elem_clone);
+        }
+        
+        xml
+    }
+
+    fn fuzz_violate_total_digits(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Find decimal values with totalDigits restrictions and violate them
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_total_digits_constraints(&mut xml, &elem_clone);
+        }
+        
+        xml
+    }
+
+    fn fuzz_violate_fraction_digits(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Find decimal values with fractionDigits restrictions and violate them
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_fraction_digits_constraints(&mut xml, &elem_clone);
+        }
+        
+        xml
+    }
+
+    fn fuzz_violate_choice(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Violate choice constraints by selecting multiple options or wrong options
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_choice_constraints(&mut xml, &elem_clone);
+        }
+        
+        xml
+    }
+
+    fn fuzz_violate_sequence_order(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Violate sequence order by reordering elements
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_sequence_order_constraints(&mut xml, &elem_clone);
+        }
+        
+        xml
+    }
+
+    fn fuzz_violate_fixed_value(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Violate fixed value constraints (if we can detect them)
+        // This is tricky since we don't parse fixed attributes, but we can try to modify values
+        // that look like they might be fixed
+        let re = Regex::new(r#">([^<]+)</"#).unwrap();
+        xml = re.replace_all(&xml, |caps: &regex::Captures| -> String {
+            let value = &caps[1];
+            // Change the value to something different
+            format!(">INVALID_{}</", value)
+        }).to_string();
+        
+        xml
+    }
+
+    fn fuzz_violate_nillable(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Add xsi:nil="true" to elements that shouldn't be nillable
+        // Or remove xsi:nil from elements that require it
+        if !xml.contains("xsi:nil") {
+            // Add xsi:nil to a random element
+            let re = Regex::new(r"(<[^>]+)(>)").unwrap();
+            xml = re.replace(&xml, |caps: &regex::Captures| -> String {
+                format!("{} xsi:nil=\"true\"{}", &caps[1], &caps[2])
+            }).to_string();
+        }
+        
+        xml
+    }
+
+    fn violate_exclusive_constraints(&mut self, xml: &mut String, element: &XsdElement, is_min: bool) {
+        if let Some(typ) = self.schema.get_type(&element.element_type) {
+            if let Some(ref restriction) = typ.restriction {
+                match restriction.base.as_str() {
+                    "xs:int" | "xs:integer" | "int" | "integer" => {
+                        if is_min {
+                            if let Some(min_val) = &restriction.min_exclusive {
+                                if let Ok(min_int) = min_val.parse::<i32>() {
+                                    // Replace with value equal to or below minimum (violates exclusive)
+                                    let re = Regex::new(r"\d+").unwrap();
+                                    *xml = re.replace_all(xml, |_caps: &regex::Captures| -> String {
+                                        min_int.to_string() // Equal to min violates exclusive
+                                    }).to_string();
+                                }
+                            }
+                        } else {
+                            if let Some(max_val) = &restriction.max_exclusive {
+                                if let Ok(max_int) = max_val.parse::<i32>() {
+                                    // Replace with value equal to or above maximum (violates exclusive)
+                                    let re = Regex::new(r"\d+").unwrap();
+                                    *xml = re.replace_all(xml, |_caps: &regex::Captures| -> String {
+                                        max_int.to_string() // Equal to max violates exclusive
+                                    }).to_string();
+                                }
+                            }
+                        }
+                    }
+                    "xs:decimal" | "xs:double" | "xs:float" => {
+                        if is_min {
+                            if let Some(min_val) = &restriction.min_exclusive {
+                                if let Ok(min_float) = min_val.parse::<f64>() {
+                                    let re = Regex::new(r"\d+\.\d+").unwrap();
+                                    *xml = re.replace_all(xml, |_caps: &regex::Captures| -> String {
+                                        format!("{:.2}", min_float) // Equal violates exclusive
+                                    }).to_string();
+                                }
+                            }
+                        } else {
+                            if let Some(max_val) = &restriction.max_exclusive {
+                                if let Ok(max_float) = max_val.parse::<f64>() {
+                                    let re = Regex::new(r"\d+\.\d+").unwrap();
+                                    *xml = re.replace_all(xml, |_caps: &regex::Captures| -> String {
+                                        format!("{:.2}", max_float) // Equal violates exclusive
+                                    }).to_string();
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Recursively fuzz children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_exclusive_constraints(xml, &child_clone, is_min);
+            }
+        }
+    }
+
+    fn violate_pattern_constraints(&mut self, xml: &mut String, element: &XsdElement) {
+        if let Some(typ) = self.schema.get_type(&element.element_type) {
+            if let Some(ref restriction) = typ.restriction {
+                if let Some(ref pattern) = restriction.pattern {
+                    // Generate a value that doesn't match the pattern
+                    // Simple approach: replace with clearly invalid value
+                    let re = Regex::new(r#">([^<]+)</"#).unwrap();
+                    *xml = re.replace_all(xml, |caps: &regex::Captures| -> String {
+                        let value = &caps[1];
+                        // Replace with something that likely violates the pattern
+                        format!(">INVALID_PATTERN_{}</", value)
+                    }).to_string();
+                }
+            }
+        }
+
+        // Recursively fuzz children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_pattern_constraints(xml, &child_clone);
+            }
+        }
+    }
+
+    fn violate_total_digits_constraints(&mut self, xml: &mut String, element: &XsdElement) {
+        if let Some(typ) = self.schema.get_type(&element.element_type) {
+            if let Some(ref restriction) = typ.restriction {
+                if let Some(total_digits) = restriction.total_digits {
+                    // Create a number with more total digits than allowed
+                    let re = Regex::new(r"\d+\.?\d*").unwrap();
+                    *xml = re.replace_all(xml, |caps: &regex::Captures| -> String {
+                        // Generate a number with more digits than total_digits
+                        "9".repeat(total_digits as usize + 10)
+                    }).to_string();
+                }
+            }
+        }
+
+        // Recursively fuzz children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_total_digits_constraints(xml, &child_clone);
+            }
+        }
+    }
+
+    fn violate_fraction_digits_constraints(&mut self, xml: &mut String, element: &XsdElement) {
+        if let Some(typ) = self.schema.get_type(&element.element_type) {
+            if let Some(ref restriction) = typ.restriction {
+                if let Some(fraction_digits) = restriction.fraction_digits {
+                    // Create a decimal with more fraction digits than allowed
+                    let re = Regex::new(r"\d+\.\d+").unwrap();
+                    *xml = re.replace_all(xml, |caps: &regex::Captures| -> String {
+                        // Generate a decimal with more fraction digits
+                        let int_part = "123";
+                        let frac_part = "9".repeat(fraction_digits as usize + 5);
+                        format!("{}.{}", int_part, frac_part)
+                    }).to_string();
+                }
+            }
+        }
+
+        // Recursively fuzz children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_fraction_digits_constraints(xml, &child_clone);
+            }
+        }
+    }
+
+    fn violate_choice_constraints(&mut self, xml: &mut String, element: &XsdElement) {
+        if let Some(typ) = self.schema.get_type(&element.element_type) {
+            if !typ.choice.is_empty() {
+                // Choice means only one option should be selected
+                // Violate by selecting multiple or none
+                for choice_group in &typ.choice {
+                    if choice_group.len() > 1 {
+                        // Add multiple elements from the choice group
+                        for choice_elem in choice_group {
+                            let extra = format!("<{}>choice_violation</{}>\n", choice_elem, choice_elem);
+                            let insert_pos = xml.find("</").unwrap_or(xml.len() - 10);
+                            xml.insert_str(insert_pos, &extra);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Recursively fuzz children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_choice_constraints(xml, &child_clone);
+            }
+        }
+    }
+
+    fn violate_sequence_order_constraints(&mut self, xml: &mut String, element: &XsdElement) {
+        if let Some(typ) = self.schema.get_type(&element.element_type) {
+            if !typ.sequence.is_empty() && typ.sequence.len() > 1 {
+                // Try to swap adjacent elements to violate order
+                for i in 0..typ.sequence.len().saturating_sub(1) {
+                    let elem1 = &typ.sequence[i];
+                    let elem2 = &typ.sequence[i + 1];
+                    
+                    // Find and swap positions
+                    let pattern1 = format!("<{}>.*?</{}>", elem1, elem1);
+                    let pattern2 = format!("<{}>.*?</{}>", elem2, elem2);
+                    let re1 = Regex::new(&pattern1).unwrap();
+                    let re2 = Regex::new(&pattern2).unwrap();
+                    
+                    // Collect matches first to avoid borrow issues
+                    let m1_opt = re1.find(&xml);
+                    let m2_opt = re2.find(&xml);
+                    
+                    if let (Some(m1), Some(m2)) = (m1_opt, m2_opt) {
+                        if m1.start() < m2.start() {
+                            // Swap them
+                            let val1 = m1.as_str().to_string();
+                            let val2 = m2.as_str().to_string();
+                            let mut new_xml = xml.replace(m1.as_str(), "TEMP_PLACEHOLDER_1");
+                            new_xml = new_xml.replace(m2.as_str(), &val1);
+                            new_xml = new_xml.replace("TEMP_PLACEHOLDER_1", &val2);
+                            *xml = new_xml;
+                            break; // Only swap once
+                        }
+                    }
+                }
+            }
+        }
+
+        // Recursively fuzz children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_sequence_order_constraints(xml, &child_clone);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -737,12 +1085,161 @@ mod tests {
     }
 
     #[test]
+    fn test_fuzz_violate_min_exclusive() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateMinExclusive);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_max_exclusive() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateMaxExclusive);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_pattern() {
+        let xsd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:simpleType name="CodeType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[A-Z]{3}"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:element name="Person">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="code" type="CodeType"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>"#;
+        
+        let schema = XsdSchema::parse(xsd).unwrap();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolatePattern);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_total_digits() {
+        let xsd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:simpleType name="AmountType">
+    <xs:restriction base="xs:decimal">
+      <xs:totalDigits value="10"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:element name="Person">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="amount" type="AmountType"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>"#;
+        
+        let schema = XsdSchema::parse(xsd).unwrap();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateTotalDigits);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_fraction_digits() {
+        let xsd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:simpleType name="PriceType">
+    <xs:restriction base="xs:decimal">
+      <xs:fractionDigits value="2"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:element name="Person">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="price" type="PriceType"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>"#;
+        
+        let schema = XsdSchema::parse(xsd).unwrap();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateFractionDigits);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_choice() {
+        let xsd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:complexType name="PersonType">
+    <xs:choice>
+      <xs:element name="email" type="xs:string"/>
+      <xs:element name="phone" type="xs:string"/>
+    </xs:choice>
+  </xs:complexType>
+  <xs:element name="Person" type="PersonType"/>
+</xs:schema>"#;
+        
+        let schema = XsdSchema::parse(xsd).unwrap();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateChoice);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_sequence_order() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateSequenceOrder);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_fixed_value() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateFixedValue);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_nillable() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateNillable);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
     fn test_fuzz_all_strategies() {
         let schema = get_test_schema();
         let mut fuzzer = XmlFuzzer::new(schema);
         let results = fuzzer.fuzz_all("Person");
         
-        assert_eq!(results.len(), 15, "Should generate all fuzzing strategies");
+        assert_eq!(results.len(), 24, "Should generate all 24 fuzzing strategies");
         for (strategy, xml) in results {
             assert!(!xml.is_empty(), "Strategy {:?} should generate XML", strategy);
             assert!(xml.contains("Person") || xml.contains("<Person"), 
@@ -882,7 +1379,7 @@ mod tests {
         let mut fuzzer = XmlFuzzer::new(schema);
         
         let results = fuzzer.fuzz_all("Person");
-        assert_eq!(results.len(), 15, "Should generate all 15 fuzzing strategies");
+        assert_eq!(results.len(), 24, "Should generate all 24 fuzzing strategies");
         
         for (_, xml) in results {
             assert!(!xml.is_empty());
