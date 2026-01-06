@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="http://example.com/person"
+           xmlns:tns="http://example.com/person"
+           elementFormDefault="qualified">
+
+  <!-- Simple type with enumeration -->
+  <xs:simpleType name="GenderType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Male"/>
+      <xs:enumeration value="Female"/>
+      <xs:enumeration value="Other"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Simple type with numeric restriction -->
+  <xs:simpleType name="AgeType">
+    <xs:restriction base="xs:int">
+      <xs:minInclusive value="0"/>
+      <xs:maxInclusive value="150"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Simple type with string length restriction -->
+  <xs:simpleType name="NameType">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="100"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Simple type with decimal restriction -->
+  <xs:simpleType name="SalaryType">
+    <xs:restriction base="xs:decimal">
+      <xs:minInclusive value="0"/>
+      <xs:maxInclusive value="1000000"/>
+      <xs:totalDigits value="10"/>
+      <xs:fractionDigits value="2"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Address complex type -->
+  <xs:complexType name="AddressType">
+    <xs:sequence>
+      <xs:element name="street" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="city" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="zipCode" type="xs:string" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="country" type="xs:string" minOccurs="1" maxOccurs="1"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Person complex type -->
+  <xs:complexType name="PersonType">
+    <xs:sequence>
+      <xs:element name="firstName" type="tns:NameType" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="lastName" type="tns:NameType" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="age" type="tns:AgeType" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="gender" type="tns:GenderType" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="email" type="xs:string" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="salary" type="tns:SalaryType" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="address" type="tns:AddressType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:int" use="required"/>
+    <xs:attribute name="active" type="xs:boolean" use="optional" default="true"/>
+  </xs:complexType>
+
+  <!-- Root element -->
+  <xs:element name="Person" type="tns:PersonType"/>
+
+</xs:schema>
+
