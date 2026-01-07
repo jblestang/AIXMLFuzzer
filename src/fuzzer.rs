@@ -1710,7 +1710,8 @@ impl XmlFuzzer {
                         let re = Regex::new(&pattern).unwrap();
                         xml = re.replace_all(&xml, |caps: &regex::Captures| -> String {
                             let extra_fractions = "9".repeat((fraction_digits + 5) as usize);
-                            format!("{}123.{}", &caps[1], extra_fractions)
+                            // Include the closing tag (caps[3])
+                            format!("{}123.{}{}", &caps[1], extra_fractions, &caps[3])
                         }).to_string();
                     }
                 }
