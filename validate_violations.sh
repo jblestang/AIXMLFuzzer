@@ -65,10 +65,11 @@ for xml_file in "$OUTPUT_DIR"/*.xml; do
         # Check if it's a validation error (exit code 3) or malformed XML (exit code 1)
         if [ $exit_code -eq 3 ]; then
             # Exit code 3 means validation error - this is GOOD for violations
-            # Extract the actual validation error message (first line with "error")
-            error_msg=$(echo "$validation_output" | grep -i "error" | head -1 | cut -d: -f3- | cut -c1-60)
+            # Extract the actual validation error message (all lines with "error")
+            error_msg=$(echo "$validation_output" | grep -i "error" | head -1 | cut -d: -f3-)
             if [ -n "$error_msg" ]; then
-                echo -e "${GREEN}✓ $filename - Valid violation: ${error_msg}...${NC}"
+                echo -e "${GREEN}✓ $filename - Valid violation:${NC}"
+                echo -e "  ${error_msg}"
             else
                 echo -e "${GREEN}✓ $filename - Valid violation (validation failed as expected)${NC}"
             fi
@@ -77,19 +78,29 @@ for xml_file in "$OUTPUT_DIR"/*.xml; do
             # Exit code 1 might mean malformed XML or namespace issues
             # Check if it's a namespace issue (which is still a valid violation)
             if echo "$validation_output" | grep -qi "namespace\|declaration"; then
-                echo -e "${GREEN}✓ $filename - Valid violation (namespace/declaration error)${NC}"
+                error_msg=$(echo "$validation_output" | grep -i "namespace\|declaration" | head -1 | cut -d: -f3-)
+                echo -e "${GREEN}✓ $filename - Valid violation (namespace/declaration error):${NC}"
+                if [ -n "$error_msg" ]; then
+                    echo -e "  ${error_msg}"
+                fi
                 VALID_VIOLATIONS=$((VALID_VIOLATIONS + 1))
             else
-                echo -e "${YELLOW}⚠ $filename - Malformed XML or parsing error${NC}"
+                echo -e "${YELLOW}⚠ $filename - Malformed XML or parsing error:${NC}"
+                echo -e "  $(echo "$validation_output" | head -1)"
                 MALFORMED_XML=$((MALFORMED_XML + 1))
             fi
         else
             # Other error - still consider it a violation if it mentions validation
             if echo "$validation_output" | grep -qi "valid\|error\|fail"; then
-                echo -e "${GREEN}✓ $filename - Valid violation (validation error)${NC}"
+                error_msg=$(echo "$validation_output" | grep -i "valid\|error\|fail" | head -1 | cut -d: -f3-)
+                echo -e "${GREEN}✓ $filename - Valid violation (validation error):${NC}"
+                if [ -n "$error_msg" ]; then
+                    echo -e "  ${error_msg}"
+                fi
                 VALID_VIOLATIONS=$((VALID_VIOLATIONS + 1))
             else
-                echo -e "${YELLOW}⚠ $filename - Unexpected error (exit code: $exit_code)${NC}"
+                echo -e "${YELLOW}⚠ $filename - Unexpected error (exit code: $exit_code):${NC}"
+                echo -e "  $(echo "$validation_output" | head -1)"
                 MALFORMED_XML=$((MALFORMED_XML + 1))
             fi
         fi
