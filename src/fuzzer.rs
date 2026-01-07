@@ -719,6 +719,7 @@ impl XmlFuzzer {
             FuzzStrategy::ViolateWhiteSpace => self.fuzz_violate_white_space_target(root_element, target_path),
             FuzzStrategy::ViolateFixedValue => self.fuzz_violate_fixed_value_target(root_element, target_path),
             FuzzStrategy::ViolateNillable => self.fuzz_violate_nillable_target(root_element, target_path),
+            FuzzStrategy::ViolateSequenceOrder => self.fuzz_violate_sequence_order_target(root_element, target_path),
             // For other strategies, use default behavior
             _ => self.fuzz(root_element, strategy),
         }
