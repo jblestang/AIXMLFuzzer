@@ -185,18 +185,17 @@ impl XmlFuzzer {
             }
 
             // Check maxOccurs constraint
-            if element.max_occurs.is_some() {
-                let max_occurs_str = if element.max_occurs.unwrap() == u32::MAX {
-                    "unbounded".to_string()
-                } else {
-                    element.max_occurs.unwrap().to_string()
-                };
-                violations.push(ConstraintViolation {
-                    element_path: current_path.clone(),
-                    constraint_type: "maxOccurs".to_string(),
-                    strategy: FuzzStrategy::ViolateMaxOccurs,
-                    description: format!("Element {} has maxOccurs={}", current_path, max_occurs_str),
-                });
+            // Only add violation if maxOccurs is not unbounded (u32::MAX)
+            // Elements with maxOccurs="unbounded" cannot have their maxOccurs violated
+            if let Some(max_occurs) = element.max_occurs {
+                if max_occurs != u32::MAX {
+                    violations.push(ConstraintViolation {
+                        element_path: current_path.clone(),
+                        constraint_type: "maxOccurs".to_string(),
+                        strategy: FuzzStrategy::ViolateMaxOccurs,
+                        description: format!("Element {} has maxOccurs={}", current_path, max_occurs),
+                    });
+                }
             }
 
             // Check attributes
