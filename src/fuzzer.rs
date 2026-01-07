@@ -1777,7 +1777,8 @@ impl XmlFuzzer {
             if let Some(typ) = self.schema.get_type(type_name) {
                 if !typ.sequence.is_empty() && typ.sequence.len() > 1 {
                     // Find the target element in the XML and swap its children
-                    // Pattern to match the entire element with its children
+                    // Pattern to match the entire element with its children (use non-greedy to match first occurrence)
+                    // We need to match the first complete element, so we use a pattern that matches balanced tags
                     let pattern = format!(r"(<{}[^>]*>)(.*?)(</{}>)", element_name, element_name);
                     let re = Regex::new(&pattern).unwrap();
                     
@@ -1786,24 +1787,35 @@ impl XmlFuzzer {
                         let children_content = &caps[2];
                         let closing_tag = &caps[3];
                         
-                        // Try to swap the first two child elements
+                        // Try to swap the first two child elements in the FIRST occurrence only
+                        // This ensures we only swap the first group, not all groups
                         let elem1 = &typ.sequence[0];
                         let elem2 = &typ.sequence[1];
                         
-                        // Pattern to match each child element
+                        // Pattern to match each child element (non-greedy to match first occurrence)
                         let child_pattern1 = format!(r"(<{}[^>]*>.*?</{}>)", elem1, elem1);
                         let child_pattern2 = format!(r"(<{}[^>]*>.*?</{}>)", elem2, elem2);
                         let re1 = Regex::new(&child_pattern1).unwrap();
                         let re2 = Regex::new(&child_pattern2).unwrap();
                         
-                        // Find matches in the children content
+                        // Find the FIRST matches in the children content
                         if let (Some(m1), Some(m2)) = (re1.find(children_content), re2.find(children_content)) {
                             if m1.start() < m2.start() {
-                                // Swap them
+                                // Swap only the first occurrence of each element
                                 let val1 = m1.as_str().to_string();
                                 let val2 = m2.as_str().to_string();
-                                let mut new_children = children_content.replace(m1.as_str(), "TEMP_PLACEHOLDER_1");
-                                new_children = new_children.replace(m2.as_str(), &val1);
+                                
+                                // Replace only the first occurrence of each element
+                                let mut new_children = children_content.to_string();
+                                // Replace first occurrence of elem1 with placeholder
+                                if let Some(first_match) = re1.find(&new_children) {
+                                    new_children.replace_range(first_match.start()..first_match.end(), "TEMP_PLACEHOLDER_1");
+                                }
+                                // Replace first occurrence of elem2 with val1
+                                if let Some(second_match) = re2.find(&new_children) {
+                                    new_children.replace_range(second_match.start()..second_match.end(), &val1);
+                                }
+                                // Replace placeholder with val2
                                 new_children = new_children.replace("TEMP_PLACEHOLDER_1", &val2);
                                 
                                 // Reconstruct the XML with swapped children
