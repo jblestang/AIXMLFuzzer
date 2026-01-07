@@ -179,6 +179,40 @@ impl XsdSchema {
                     let local_name_bytes = e.name().local_name().as_ref().to_vec();
                     let local_name_str = str::from_utf8(&local_name_bytes)?;
                     
+                    // Handle self-closing attributes (e.g., <xs:attribute name="id" type="xs:int" use="required"/>)
+                    if local_name_str == "attribute" {
+                        let mut attr = XsdAttribute {
+                            name: String::new(),
+                            attr_type: String::new(),
+                            required: false,
+                            default_value: None,
+                        };
+
+                        for attr_data in e.attributes() {
+                            let attr_data = attr_data?;
+                            let key = str::from_utf8(attr_data.key.as_ref())?;
+                            let value = attr_data.decode_and_unescape_value(&reader)?.to_string();
+
+                            match key {
+                                "name" => attr.name = value,
+                                "type" => attr.attr_type = value,
+                                "use" => attr.required = value == "required",
+                                "default" => attr.default_value = Some(value),
+                                _ => {}
+                            }
+                        }
+
+                        if !attr.name.is_empty() {
+                            if let Some(ref mut elem) = current_element {
+                                elem.attributes.push(attr.clone());
+                            }
+                            // Also add to type if we're inside a complex type
+                            if let Some(ref mut typ) = current_type {
+                                typ.attributes.push(attr);
+                            }
+                        }
+                    }
+                    
                     // Handle restriction facets (enumeration, minLength, etc.) that are self-closing
                     if current_restriction.is_some() {
                         match local_name_str {
