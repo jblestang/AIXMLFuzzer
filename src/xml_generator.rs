@@ -31,7 +31,15 @@ impl XmlGenerator {
         let mut xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
         // Generate root element if it exists in schema
         if let Some(elem) = self.schema.get_element(root_element) {
-            let elem_clone = elem.clone();
+            let mut elem_clone = elem.clone();
+            // If element doesn't have attributes but has a type, try to get them from the type
+            // This handles cases where attributes weren't copied during parsing
+            if elem_clone.attributes.is_empty() && !elem_clone.element_type.is_empty() {
+                let type_name = elem_clone.element_type.split(':').last().unwrap_or(&elem_clone.element_type);
+                if let Some(typ) = self.schema.get_type(type_name) {
+                    elem_clone.attributes = typ.attributes.clone();
+                }
+            }
             // Add namespace declarations if targetNamespace is defined
             let element_xml = self.generate_element(&elem_clone, 0);
             if let Some(ref target_ns) = self.schema.target_namespace {
