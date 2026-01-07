@@ -32,7 +32,28 @@ impl XmlGenerator {
         // Generate root element if it exists in schema
         if let Some(elem) = self.schema.get_element(root_element) {
             let elem_clone = elem.clone();
-            xml.push_str(&self.generate_element(&elem_clone, 0));
+            // Add namespace declarations if targetNamespace is defined
+            let element_xml = self.generate_element(&elem_clone, 0);
+            if let Some(ref target_ns) = self.schema.target_namespace {
+                // Find the namespace prefix (usually "tns" or use default)
+                let ns_prefix = self.schema.namespaces.iter()
+                    .find(|(_, uri)| uri == &target_ns)
+                    .map(|(prefix, _)| prefix.split(':').last().unwrap_or(prefix))
+                    .unwrap_or("tns");
+                
+                // Insert namespace declarations into the opening tag
+                if let Some(pos) = element_xml.find('>') {
+                    let before_tag = &element_xml[..pos];
+                    let after_tag = &element_xml[pos..];
+                    xml.push_str(before_tag);
+                    xml.push_str(&format!(r#" xmlns="{}" xmlns:{}="{}""#, target_ns, ns_prefix, target_ns));
+                    xml.push_str(after_tag);
+                } else {
+                    xml.push_str(&element_xml);
+                }
+            } else {
+                xml.push_str(&element_xml);
+            }
         } else {
             // Fallback: generate empty element if not found in schema
             xml.push_str(&format!("<{}></{}>", root_element, root_element));

@@ -19,6 +19,8 @@ pub struct XsdSchema {
     pub types: HashMap<String, XsdType>,
     /// Map of namespace prefixes to namespace URIs
     pub namespaces: HashMap<String, String>,
+    /// Target namespace URI (targetNamespace attribute)
+    pub target_namespace: Option<String>,
     /// Map of group names to their element lists
     pub groups: HashMap<String, Vec<String>>,
     /// Map of attribute group names to their attribute lists
@@ -91,6 +93,8 @@ pub struct XsdType {
     pub choice: Vec<Vec<String>>,
     /// Unordered list of child elements (xs:all)
     pub all: Vec<String>,
+    /// List of attributes defined for this type
+    pub attributes: Vec<XsdAttribute>,
     /// Whether type is abstract (cannot be used directly)
     pub r#abstract: bool,
     /// Whether type allows mixed content (text and elements)
@@ -146,6 +150,7 @@ impl XsdSchema {
             elements: HashMap::new(),
             types: HashMap::new(),
             namespaces: HashMap::new(),
+            target_namespace: None,
             groups: HashMap::new(),
             attribute_groups: HashMap::new(),
             unique_constraints: HashMap::new(),
@@ -327,13 +332,15 @@ impl XsdSchema {
 
                     match local_name_str {
                         "schema" => {
-                            // Extract namespace declarations from schema root
+                            // Extract namespace declarations and targetNamespace from schema root
                             for attr in e.attributes() {
                                 let attr = attr?;
                                 let key = str::from_utf8(attr.key.as_ref())?;
                                 let value = attr.decode_and_unescape_value(&reader)?.to_string();
                                 if key.contains("xmlns") {
                                     schema.namespaces.insert(key.to_string(), value);
+                                } else if key == "targetNamespace" {
+                                    schema.target_namespace = Some(value);
                                 }
                             }
                         }
@@ -415,6 +422,7 @@ impl XsdSchema {
                                 sequence: Vec::new(),
                                 choice: Vec::new(),
                                 all: Vec::new(),
+                                attributes: Vec::new(),
                                 r#abstract: type_abstract,
                                 mixed: type_mixed,
                                 union_types: Vec::new(),
@@ -728,7 +736,11 @@ impl XsdSchema {
 
                             if !attr.name.is_empty() {
                                 if let Some(ref mut elem) = current_element {
-                                    elem.attributes.push(attr);
+                                    elem.attributes.push(attr.clone());
+                                }
+                                // Also add to type if we're inside a complex type
+                                if let Some(ref mut typ) = current_type {
+                                    typ.attributes.push(attr);
                                 }
                             }
                         }
@@ -751,6 +763,8 @@ impl XsdSchema {
                                     if let Some(typ) = schema.types.get(type_name) {
                                         // Copy children from type to element
                                         elem.children = typ.sequence.clone();
+                                        // Copy attributes from type to element
+                                        elem.attributes = typ.attributes.clone();
                                     }
                                 }
                                 
