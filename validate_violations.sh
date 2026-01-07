@@ -3,7 +3,7 @@
 # Script to validate that XML files in output/ directory are valid violations of the XSD schema
 # A valid violation should FAIL xmllint validation
 
-set -e
+# Don't use set -e because we expect xmllint to fail for violations
 
 # Colors for output
 RED='\033[0;31m'
