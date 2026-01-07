@@ -449,6 +449,7 @@ impl XsdSchema {
                                 sequence: Vec::new(),
                                 choice: Vec::new(),
                                 all: Vec::new(),
+                                attributes: Vec::new(),
                                 r#abstract: type_abstract,
                                 mixed: false,
                                 union_types: Vec::new(),
