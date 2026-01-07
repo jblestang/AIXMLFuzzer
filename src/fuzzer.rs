@@ -1362,10 +1362,20 @@ impl XmlFuzzer {
             if let Some(typ) = self.schema.get_type(type_name) {
                 if let Some(ref restriction) = typ.restriction {
                     if let Some(max_val) = &restriction.max_inclusive {
-                        // Find and modify the target element's numeric value
-                        let pattern = format!(r"(<{}[^>]*>)(\d+)(</{}>)", element_name, element_name);
+                        // Find and modify the target element's numeric value (supports both integers and decimals)
+                        // Pattern matches: <element>number</element> where number can be integer or decimal
+                        let pattern = format!(r"(<{}[^>]*>)(-?\d+\.?\d*)(</{}>)", element_name, element_name);
                         let re = Regex::new(&pattern).unwrap();
-                        if let Ok(max_int) = max_val.parse::<i32>() {
+                        
+                        // Try to parse as decimal first (for decimal types like xs:decimal)
+                        if let Ok(max_decimal) = max_val.parse::<f64>() {
+                            xml = re.replace_all(&xml, |caps: &regex::Captures| -> String {
+                                // Replace with value above maximum (add a small amount)
+                                let new_value = max_decimal + 0.01;
+                                format!("{}{:.2}{}", &caps[1], new_value, &caps[3])
+                            }).to_string();
+                        } else if let Ok(max_int) = max_val.parse::<i32>() {
+                            // Fallback to integer parsing
                             xml = re.replace_all(&xml, |caps: &regex::Captures| -> String {
                                 // Replace with value above maximum
                                 format!("{}{}{}", &caps[1], max_int + 1, &caps[3])
