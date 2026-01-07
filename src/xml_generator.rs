@@ -1,12 +1,22 @@
+//! XML Generator
+//! 
+//! Generates valid XML documents conforming to an XSD schema.
+//! Uses random value generation while respecting schema constraints.
+
 use crate::xsd::*;
 use rand::Rng;
 
+/// Generates valid XML documents based on XSD schema definitions
+/// Respects all schema constraints including types, restrictions, and cardinality
 pub struct XmlGenerator {
+    /// The parsed XSD schema to generate XML from
     schema: XsdSchema,
+    /// Random number generator for value generation
     rng: rand::rngs::ThreadRng,
 }
 
 impl XmlGenerator {
+    /// Create a new XML generator with the given schema
     pub fn new(schema: XsdSchema) -> Self {
         Self {
             schema,
@@ -14,40 +24,50 @@ impl XmlGenerator {
         }
     }
 
+    /// Generate a valid XML document starting from the root element
+    /// Returns a complete XML document as a string
     pub fn generate_valid(&mut self, root_element: &str) -> String {
+        // Start with XML declaration
         let mut xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+        // Generate root element if it exists in schema
         if let Some(elem) = self.schema.get_element(root_element) {
             let elem_clone = elem.clone();
             xml.push_str(&self.generate_element(&elem_clone, 0));
         } else {
+            // Fallback: generate empty element if not found in schema
             xml.push_str(&format!("<{}></{}>", root_element, root_element));
         }
         xml
     }
 
+    /// Recursively generate an XML element and its children
+    /// Respects minOccurs/maxOccurs constraints and generates appropriate values
     fn generate_element(&mut self, element: &XsdElement, indent: usize) -> String {
+        // Create indentation for pretty-printing
         let indent_str = "  ".repeat(indent);
         let mut xml = format!("{}<{}", indent_str, element.name);
 
-        // Generate attributes
+        // Generate all attributes for this element
         for attr in &element.attributes {
+            // Include required attributes or optional ones with 70% probability
             if attr.required || self.rng.gen_bool(0.7) {
                 let value = self.generate_attribute_value(&attr.attr_type);
                 xml.push_str(&format!(" {}=\"{}\"", attr.name, value));
             } else if let Some(ref default) = attr.default_value {
+                // Use default value if available
                 xml.push_str(&format!(" {}=\"{}\"", attr.name, default));
             }
         }
 
-        // Generate content
-        // Check if element has children or references a complex type
+        // Determine if element has child elements
         let mut has_children = !element.children.is_empty();
         let mut children_to_generate = element.children.clone();
         
+        // Check if element references a complex type with children
         if !has_children && !element.element_type.is_empty() {
-            // Check if the type has children
             let type_name = element.element_type.split(':').last().unwrap_or(&element.element_type);
             if let Some(typ) = self.schema.get_type(type_name) {
+                // Use sequence from complex type if available
                 if !typ.sequence.is_empty() {
                     has_children = true;
                     children_to_generate = typ.sequence.clone();
@@ -55,25 +75,33 @@ impl XmlGenerator {
             }
         }
         
+        // Get occurrence constraints (default to 1 if not specified)
         let min_occurs = element.min_occurs.unwrap_or(1);
         let max_occurs = element.max_occurs.unwrap_or(1);
 
         if !has_children {
-            // Simple element
-            let value = self.generate_simple_value(&element.element_type);
+            // Simple element - generate text content based on type
+            // Remove namespace prefix if present (e.g., "tns:GenderType" -> "GenderType")
+            let type_name = element.element_type.split(':').last().unwrap_or(&element.element_type);
+            let value = self.generate_simple_value(type_name);
             xml.push_str(&format!(">{}</{}>\n", value, element.name));
         } else {
+            // Complex element - generate children
             xml.push_str(">\n");
+            // Determine how many times to generate children (respecting maxOccurs)
             let count = if max_occurs == u32::MAX {
+                // For unbounded, limit to reasonable number (max 3)
                 self.rng.gen_range(min_occurs..=min_occurs.max(3))
             } else {
                 self.rng.gen_range(min_occurs..=max_occurs)
             };
 
+            // Generate children elements
             for _ in 0..count {
                 for child_name in &children_to_generate {
                     if let Some(child_elem) = self.schema.get_element(child_name) {
                         let child_clone = child_elem.clone();
+                        // Recursively generate child elements with increased indentation
                         xml.push_str(&self.generate_element(&child_clone, indent + 1));
                     }
                 }
@@ -85,11 +113,15 @@ impl XmlGenerator {
         xml
     }
 
+    /// Generate a value for an attribute based on its type
     fn generate_attribute_value(&mut self, attr_type: &str) -> String {
         self.generate_simple_value(attr_type)
     }
 
+    /// Generate a simple value based on type name
+    /// First checks for custom restrictions, then falls back to built-in types
     fn generate_simple_value(&mut self, type_name: &str) -> String {
+        // Check if type has restrictions (enumeration, min/max, etc.)
         let restriction_clone = self.schema.get_type(type_name)
             .and_then(|typ| typ.restriction.as_ref())
             .cloned();
@@ -97,7 +129,7 @@ impl XmlGenerator {
             return self.generate_restricted_value(&restriction);
         }
 
-        // Handle built-in types
+        // Handle built-in XSD types with random valid values
         match type_name {
             "xs:string" | "string" => {
                 let len = self.rng.gen_range(5..=20);

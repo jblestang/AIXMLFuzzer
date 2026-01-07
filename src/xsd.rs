@@ -1,81 +1,147 @@
+//! XSD Schema Parser
+//! 
+//! This module provides functionality to parse XML Schema Definition (XSD) files
+//! into internal data structures that can be used for XML generation and fuzzing.
+
 use anyhow::Result;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use std::collections::HashMap;
 use std::str;
 
+/// Represents a complete XSD schema with all its components
+/// Contains mappings of elements, types, namespaces, and constraints
 #[derive(Debug, Clone)]
 pub struct XsdSchema {
+    /// Map of element names to their definitions
     pub elements: HashMap<String, XsdElement>,
+    /// Map of type names to their definitions
     pub types: HashMap<String, XsdType>,
+    /// Map of namespace prefixes to namespace URIs
     pub namespaces: HashMap<String, String>,
+    /// Map of group names to their element lists
     pub groups: HashMap<String, Vec<String>>,
+    /// Map of attribute group names to their attribute lists
     pub attribute_groups: HashMap<String, Vec<XsdAttribute>>,
+    /// Map of unique constraint names to their field lists
     pub unique_constraints: HashMap<String, Vec<String>>,
+    /// Map of key constraint names to their field lists
     pub key_constraints: HashMap<String, Vec<String>>,
+    /// Map of keyref constraint names to their referenced key names
     pub keyref_constraints: HashMap<String, String>,
-    pub substitution_groups: HashMap<String, Vec<String>>,  // ADD - maps head element to substitutes
+    /// Map of head element names to lists of substitute element names
+    pub substitution_groups: HashMap<String, Vec<String>>,
 }
 
+/// Represents an XSD element definition
+/// Contains all properties that can be defined for an XML element in a schema
 #[derive(Debug, Clone)]
 pub struct XsdElement {
+    /// Element name
     pub name: String,
+    /// Type reference (can be a simple or complex type)
     pub element_type: String,
+    /// Minimum number of occurrences (minOccurs attribute)
     pub min_occurs: Option<u32>,
+    /// Maximum number of occurrences (maxOccurs attribute, u32::MAX for unbounded)
     pub max_occurs: Option<u32>,
+    /// List of child element names in document order
     pub children: Vec<String>,
+    /// List of attributes defined for this element
     pub attributes: Vec<XsdAttribute>,
+    /// Default value if element is missing
     pub default_value: Option<String>,
+    /// Fixed value that must be used
     pub fixed_value: Option<String>,
+    /// Whether element can be nil (xsi:nil="true")
     pub nillable: bool,
+    /// Whether element is abstract (cannot be used directly)
     pub r#abstract: bool,
-    pub substitution_group: Option<String>,  // ADD - for substitutionGroup
+    /// Name of head element if this is a substitution group member
+    pub substitution_group: Option<String>,
 }
 
+/// Represents an XSD attribute definition
+/// Contains properties for XML attributes in the schema
 #[derive(Debug, Clone)]
 pub struct XsdAttribute {
+    /// Attribute name
     pub name: String,
+    /// Type of the attribute value
     pub attr_type: String,
+    /// Whether attribute is required (use="required")
     pub required: bool,
+    /// Default value if attribute is missing
     pub default_value: Option<String>,
 }
 
+/// Represents an XSD type definition (simple or complex)
+/// Can be a base type, restriction, or complex type with child elements
 #[derive(Debug, Clone)]
 pub struct XsdType {
+    /// Type name
     pub name: String,
+    /// Base type if this is a derived type
     pub base_type: Option<String>,
+    /// Restrictions applied to simple types (min/max, patterns, etc.)
     pub restriction: Option<XsdRestriction>,
+    /// Ordered list of child elements (xs:sequence)
     pub sequence: Vec<String>,
+    /// Groups of alternative child elements (xs:choice)
     pub choice: Vec<Vec<String>>,
+    /// Unordered list of child elements (xs:all)
     pub all: Vec<String>,
+    /// Whether type is abstract (cannot be used directly)
     pub r#abstract: bool,
+    /// Whether type allows mixed content (text and elements)
     pub mixed: bool,
+    /// List of types in a union type
     pub union_types: Vec<String>,
+    /// Item type for list types
     pub list_item_type: Option<String>,
 }
 
+/// Represents restrictions on simple types
+/// Contains all facets that can constrain a simple type's values
 #[derive(Debug, Clone)]
 pub struct XsdRestriction {
+    /// Base type being restricted
     pub base: String,
+    /// Minimum inclusive value for numeric types
     pub min_inclusive: Option<String>,
+    /// Maximum inclusive value for numeric types
     pub max_inclusive: Option<String>,
+    /// Minimum exclusive value for numeric types
     pub min_exclusive: Option<String>,
+    /// Maximum exclusive value for numeric types
     pub max_exclusive: Option<String>,
+    /// Minimum string length
     pub min_length: Option<u32>,
+    /// Maximum string length
     pub max_length: Option<u32>,
+    /// Exact string length
     pub length: Option<u32>,
+    /// Regular expression pattern for string validation
     pub pattern: Option<String>,
+    /// List of allowed enumeration values
     pub enumeration: Vec<String>,
+    /// Maximum total digits for decimal types
     pub total_digits: Option<u32>,
+    /// Maximum fraction digits for decimal types
     pub fraction_digits: Option<u32>,
+    /// Whitespace handling (preserve, replace, collapse)
     pub white_space: Option<String>,
 }
 
 impl XsdSchema {
+    /// Parse an XSD schema from XML string content
+    /// Uses event-based XML parsing to extract schema definitions
     pub fn parse(xsd_content: &str) -> Result<Self> {
+        // Initialize XML reader with whitespace trimming
         let mut reader = Reader::from_str(xsd_content);
         reader.trim_text(true);
 
+        // Initialize empty schema structure
         let mut schema = XsdSchema {
             elements: HashMap::new(),
             types: HashMap::new(),
@@ -88,23 +154,116 @@ impl XsdSchema {
             substitution_groups: HashMap::new(),
         };
 
-        let mut buf = Vec::new();
-        let mut current_element: Option<XsdElement> = None;
-        let mut current_type: Option<XsdType> = None;
-        let mut current_restriction: Option<XsdRestriction> = None;
-        let mut element_stack: Vec<String> = Vec::new();
-        let mut in_sequence = false;
-        let mut in_choice = false;
-        let mut in_all = false;
-        let mut current_sequence: Vec<String> = Vec::new();
-        let mut current_choice_group: Vec<String> = Vec::new();
+        // Parsing state variables
+        let mut buf = Vec::new();  // Buffer for XML events
+        let mut current_element: Option<XsdElement> = None;  // Element being parsed
+        let mut current_type: Option<XsdType> = None;  // Type being parsed
+        let mut current_restriction: Option<XsdRestriction> = None;  // Restriction being parsed
+        let mut element_stack: Vec<String> = Vec::new();  // Stack for nested elements
+        let mut in_sequence = false;  // Currently inside xs:sequence
+        let mut in_choice = false;  // Currently inside xs:choice
+        let mut in_all = false;  // Currently inside xs:all
+        let mut current_sequence: Vec<String> = Vec::new();  // Current sequence elements
+        let mut current_choice_group: Vec<String> = Vec::new();  // Current choice group
 
+        // Main parsing loop - process XML events
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Empty(e)) => {
-                    // Handle self-closing elements
+                    // Handle self-closing elements (e.g., <element name="x" type="y"/>)
                     let local_name_bytes = e.name().local_name().as_ref().to_vec();
                     let local_name_str = str::from_utf8(&local_name_bytes)?;
+                    
+                    // Handle restriction facets (enumeration, minLength, etc.) that are self-closing
+                    if current_restriction.is_some() {
+                        match local_name_str {
+                            "enumeration" => {
+                                for attr in e.attributes() {
+                                    let attr = attr?;
+                                    let key = str::from_utf8(attr.key.as_ref())?;
+                                    if key == "value" {
+                                        let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                        if let Some(ref mut r) = current_restriction {
+                                            r.enumeration.push(value.clone());
+                                        }
+                                    }
+                                }
+                            }
+                            "minLength" => {
+                                for attr in e.attributes() {
+                                    let attr = attr?;
+                                    let key = str::from_utf8(attr.key.as_ref())?;
+                                    if key == "value" {
+                                        let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                        if let Some(ref mut r) = current_restriction {
+                                            r.min_length = value.parse().ok();
+                                        }
+                                    }
+                                }
+                            }
+                            "maxLength" => {
+                                for attr in e.attributes() {
+                                    let attr = attr?;
+                                    let key = str::from_utf8(attr.key.as_ref())?;
+                                    if key == "value" {
+                                        let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                        if let Some(ref mut r) = current_restriction {
+                                            r.max_length = value.parse().ok();
+                                        }
+                                    }
+                                }
+                            }
+                            "minInclusive" => {
+                                for attr in e.attributes() {
+                                    let attr = attr?;
+                                    let key = str::from_utf8(attr.key.as_ref())?;
+                                    if key == "value" {
+                                        let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                        if let Some(ref mut r) = current_restriction {
+                                            r.min_inclusive = Some(value);
+                                        }
+                                    }
+                                }
+                            }
+                            "maxInclusive" => {
+                                for attr in e.attributes() {
+                                    let attr = attr?;
+                                    let key = str::from_utf8(attr.key.as_ref())?;
+                                    if key == "value" {
+                                        let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                        if let Some(ref mut r) = current_restriction {
+                                            r.max_inclusive = Some(value);
+                                        }
+                                    }
+                                }
+                            }
+                            "totalDigits" => {
+                                for attr in e.attributes() {
+                                    let attr = attr?;
+                                    let key = str::from_utf8(attr.key.as_ref())?;
+                                    if key == "value" {
+                                        let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                        if let Some(ref mut r) = current_restriction {
+                                            r.total_digits = value.parse().ok();
+                                        }
+                                    }
+                                }
+                            }
+                            "fractionDigits" => {
+                                for attr in e.attributes() {
+                                    let attr = attr?;
+                                    let key = str::from_utf8(attr.key.as_ref())?;
+                                    if key == "value" {
+                                        let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                        if let Some(ref mut r) = current_restriction {
+                                            r.fraction_digits = value.parse().ok();
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                     
                     if local_name_str == "element" {
                         let mut elem = XsdElement {
@@ -121,45 +280,54 @@ impl XsdSchema {
                                 substitution_group: None,
                             };
 
+                        // Parse element attributes
                         for attr in e.attributes() {
                             let attr = attr?;
                             let key = str::from_utf8(attr.key.as_ref())?;
                             let value = attr.decode_and_unescape_value(&reader)?.to_string();
 
-                                match key {
-                                    "name" => elem.name = value,
-                                    "type" => elem.element_type = value,
-                                    "minOccurs" => {
-                                        elem.min_occurs = value.parse().ok();
-                                    }
-                                    "maxOccurs" => {
-                                        if value == "unbounded" {
-                                            elem.max_occurs = Some(u32::MAX);
-                                        } else {
-                                            elem.max_occurs = value.parse().ok();
-                                        }
-                                    }
-                                    "default" => elem.default_value = Some(value),
-                                    "fixed" => elem.fixed_value = Some(value),
-                                    "nillable" => elem.nillable = value == "true",
-                                    "abstract" => elem.r#abstract = value == "true",
-                                    "substitutionGroup" => elem.substitution_group = Some(value),
-                                    _ => {}
+                            // Map XSD attributes to element properties
+                            match key {
+                                "name" => elem.name = value,
+                                "type" => elem.element_type = value,
+                                "minOccurs" => {
+                                    elem.min_occurs = value.parse().ok();
                                 }
+                                "maxOccurs" => {
+                                    // Handle "unbounded" as maximum u32 value
+                                    if value == "unbounded" {
+                                        elem.max_occurs = Some(u32::MAX);
+                                    } else {
+                                        elem.max_occurs = value.parse().ok();
+                                    }
+                                }
+                                "default" => elem.default_value = Some(value),
+                                "fixed" => elem.fixed_value = Some(value),
+                                "nillable" => elem.nillable = value == "true",
+                                "abstract" => elem.r#abstract = value == "true",
+                                "substitutionGroup" => elem.substitution_group = Some(value),
+                                _ => {}
+                            }
                         }
 
+                        // Store element if it has a name
                         if !elem.name.is_empty() {
-                            // Store as top-level element
+                            // If we're inside a sequence, add this element to the sequence
+                            if in_sequence {
+                                current_sequence.push(elem.name.clone());
+                            }
                             schema.elements.insert(elem.name.clone(), elem);
                         }
                     }
                 }
                 Ok(Event::Start(e)) => {
+                    // Handle opening tags - extract local name (ignore namespace prefix)
                     let local_name_bytes = e.name().local_name().as_ref().to_vec();
                     let local_name_str = str::from_utf8(&local_name_bytes)?;
 
                     match local_name_str {
                         "schema" => {
+                            // Extract namespace declarations from schema root
                             for attr in e.attributes() {
                                 let attr = attr?;
                                 let key = str::from_utf8(attr.key.as_ref())?;
@@ -170,6 +338,7 @@ impl XsdSchema {
                             }
                         }
                         "element" => {
+                            // Start parsing an element definition
                             let mut elem = XsdElement {
                                 name: String::new(),
                                 element_type: String::new(),
@@ -396,7 +565,7 @@ impl XsdSchema {
                                 if key == "value" {
                                     let value = attr.decode_and_unescape_value(&reader)?.to_string();
                                     if let Some(ref mut r) = current_restriction {
-                                        r.enumeration.push(value);
+                                        r.enumeration.push(value.clone());
                                     }
                                 }
                             }
