@@ -9,6 +9,12 @@ pub struct XsdSchema {
     pub elements: HashMap<String, XsdElement>,
     pub types: HashMap<String, XsdType>,
     pub namespaces: HashMap<String, String>,
+    pub groups: HashMap<String, Vec<String>>,
+    pub attribute_groups: HashMap<String, Vec<XsdAttribute>>,
+    pub unique_constraints: HashMap<String, Vec<String>>,
+    pub key_constraints: HashMap<String, Vec<String>>,
+    pub keyref_constraints: HashMap<String, String>,
+    pub substitution_groups: HashMap<String, Vec<String>>,  // ADD - maps head element to substitutes
 }
 
 #[derive(Debug, Clone)]
@@ -19,6 +25,11 @@ pub struct XsdElement {
     pub max_occurs: Option<u32>,
     pub children: Vec<String>,
     pub attributes: Vec<XsdAttribute>,
+    pub default_value: Option<String>,
+    pub fixed_value: Option<String>,
+    pub nillable: bool,
+    pub r#abstract: bool,
+    pub substitution_group: Option<String>,  // ADD - for substitutionGroup
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +48,10 @@ pub struct XsdType {
     pub sequence: Vec<String>,
     pub choice: Vec<Vec<String>>,
     pub all: Vec<String>,
+    pub r#abstract: bool,
+    pub mixed: bool,
+    pub union_types: Vec<String>,
+    pub list_item_type: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -48,10 +63,12 @@ pub struct XsdRestriction {
     pub max_exclusive: Option<String>,
     pub min_length: Option<u32>,
     pub max_length: Option<u32>,
+    pub length: Option<u32>,
     pub pattern: Option<String>,
     pub enumeration: Vec<String>,
     pub total_digits: Option<u32>,
     pub fraction_digits: Option<u32>,
+    pub white_space: Option<String>,
 }
 
 impl XsdSchema {
@@ -63,6 +80,12 @@ impl XsdSchema {
             elements: HashMap::new(),
             types: HashMap::new(),
             namespaces: HashMap::new(),
+            groups: HashMap::new(),
+            attribute_groups: HashMap::new(),
+            unique_constraints: HashMap::new(),
+            key_constraints: HashMap::new(),
+            keyref_constraints: HashMap::new(),
+            substitution_groups: HashMap::new(),
         };
 
         let mut buf = Vec::new();
@@ -91,28 +114,38 @@ impl XsdSchema {
                             max_occurs: None,
                             children: Vec::new(),
                             attributes: Vec::new(),
-                        };
+                                default_value: None,
+                                fixed_value: None,
+                                nillable: false,
+                                r#abstract: false,
+                                substitution_group: None,
+                            };
 
                         for attr in e.attributes() {
                             let attr = attr?;
                             let key = str::from_utf8(attr.key.as_ref())?;
                             let value = attr.decode_and_unescape_value(&reader)?.to_string();
 
-                            match key {
-                                "name" => elem.name = value,
-                                "type" => elem.element_type = value,
-                                "minOccurs" => {
-                                    elem.min_occurs = value.parse().ok();
-                                }
-                                "maxOccurs" => {
-                                    if value == "unbounded" {
-                                        elem.max_occurs = Some(u32::MAX);
-                                    } else {
-                                        elem.max_occurs = value.parse().ok();
+                                match key {
+                                    "name" => elem.name = value,
+                                    "type" => elem.element_type = value,
+                                    "minOccurs" => {
+                                        elem.min_occurs = value.parse().ok();
                                     }
+                                    "maxOccurs" => {
+                                        if value == "unbounded" {
+                                            elem.max_occurs = Some(u32::MAX);
+                                        } else {
+                                            elem.max_occurs = value.parse().ok();
+                                        }
+                                    }
+                                    "default" => elem.default_value = Some(value),
+                                    "fixed" => elem.fixed_value = Some(value),
+                                    "nillable" => elem.nillable = value == "true",
+                                    "abstract" => elem.r#abstract = value == "true",
+                                    "substitutionGroup" => elem.substitution_group = Some(value),
+                                    _ => {}
                                 }
-                                _ => {}
-                            }
                         }
 
                         if !elem.name.is_empty() {
@@ -144,6 +177,11 @@ impl XsdSchema {
                                 max_occurs: None,
                                 children: Vec::new(),
                                 attributes: Vec::new(),
+                                default_value: None,
+                                fixed_value: None,
+                                nillable: false,
+                                r#abstract: false,
+                                substitution_group: None,
                             };
 
                             for attr in e.attributes() {
@@ -164,6 +202,11 @@ impl XsdSchema {
                                             elem.max_occurs = value.parse().ok();
                                         }
                                     }
+                                    "default" => elem.default_value = Some(value),
+                                    "fixed" => elem.fixed_value = Some(value),
+                                    "nillable" => elem.nillable = value == "true",
+                                    "abstract" => elem.r#abstract = value == "true",
+                                    "substitutionGroup" => elem.substitution_group = Some(value),
                                     _ => {}
                                 }
                             }
@@ -183,11 +226,17 @@ impl XsdSchema {
                         }
                         "complexType" => {
                             let mut type_name = String::new();
+                            let mut type_abstract = false;
+                            let mut type_mixed = false;
                             for attr in e.attributes() {
                                 let attr = attr?;
                                 let key = str::from_utf8(attr.key.as_ref())?;
-                                if key == "name" {
-                                    type_name = attr.decode_and_unescape_value(&reader)?.to_string();
+                                let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                match key {
+                                    "name" => type_name = value,
+                                    "abstract" => type_abstract = value == "true",
+                                    "mixed" => type_mixed = value == "true",
+                                    _ => {}
                                 }
                             }
                             current_type = Some(XsdType {
@@ -197,15 +246,23 @@ impl XsdSchema {
                                 sequence: Vec::new(),
                                 choice: Vec::new(),
                                 all: Vec::new(),
+                                r#abstract: type_abstract,
+                                mixed: type_mixed,
+                                union_types: Vec::new(),
+                                list_item_type: None,
                             });
                         }
                         "simpleType" => {
                             let mut type_name = String::new();
+                            let mut type_abstract = false;
                             for attr in e.attributes() {
                                 let attr = attr?;
                                 let key = str::from_utf8(attr.key.as_ref())?;
-                                if key == "name" {
-                                    type_name = attr.decode_and_unescape_value(&reader)?.to_string();
+                                let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                match key {
+                                    "name" => type_name = value,
+                                    "abstract" => type_abstract = value == "true",
+                                    _ => {}
                                 }
                             }
                             current_type = Some(XsdType {
@@ -215,6 +272,10 @@ impl XsdSchema {
                                 sequence: Vec::new(),
                                 choice: Vec::new(),
                                 all: Vec::new(),
+                                r#abstract: type_abstract,
+                                mixed: false,
+                                union_types: Vec::new(),
+                                list_item_type: None,
                             });
                         }
                         "sequence" => {
@@ -237,10 +298,12 @@ impl XsdSchema {
                                 max_exclusive: None,
                                 min_length: None,
                                 max_length: None,
+                                length: None,
                                 pattern: None,
                                 enumeration: Vec::new(),
                                 total_digits: None,
                                 fraction_digits: None,
+                                white_space: None,
                             });
 
                             for attr in e.attributes() {
@@ -372,6 +435,104 @@ impl XsdSchema {
                                         r.fraction_digits = value.parse().ok();
                                     }
                                 }
+                            }
+                        }
+                        "length" => {
+                            for attr in e.attributes() {
+                                let attr = attr?;
+                                let key = str::from_utf8(attr.key.as_ref())?;
+                                if key == "value" {
+                                    let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                    if let Some(ref mut r) = current_restriction {
+                                        r.length = value.parse().ok();
+                                    }
+                                }
+                            }
+                        }
+                        "whiteSpace" => {
+                            for attr in e.attributes() {
+                                let attr = attr?;
+                                let key = str::from_utf8(attr.key.as_ref())?;
+                                if key == "value" {
+                                    let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                    if let Some(ref mut r) = current_restriction {
+                                        r.white_space = Some(value);
+                                    }
+                                }
+                            }
+                        }
+                        "union" => {
+                            let mut member_types = Vec::new();
+                            for attr in e.attributes() {
+                                let attr = attr?;
+                                let key = str::from_utf8(attr.key.as_ref())?;
+                                if key == "memberTypes" {
+                                    let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                    member_types = value.split_whitespace().map(|s| s.to_string()).collect();
+                                }
+                            }
+                            if let Some(ref mut typ) = current_type {
+                                typ.union_types = member_types;
+                            }
+                        }
+                        "list" => {
+                            for attr in e.attributes() {
+                                let attr = attr?;
+                                let key = str::from_utf8(attr.key.as_ref())?;
+                                if key == "itemType" {
+                                    let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                    if let Some(ref mut typ) = current_type {
+                                        typ.list_item_type = Some(value);
+                                    }
+                                }
+                            }
+                        }
+                        "unique" => {
+                            let mut unique_name = String::new();
+                            let selector_path = String::new();
+                            for attr in e.attributes() {
+                                let attr = attr?;
+                                let key = str::from_utf8(attr.key.as_ref())?;
+                                let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                match key {
+                                    "name" => unique_name = value,
+                                    _ => {}
+                                }
+                            }
+                            // Store unique constraint (simplified - would need field parsing)
+                            if !unique_name.is_empty() {
+                                schema.unique_constraints.insert(unique_name, vec![selector_path]);
+                            }
+                        }
+                        "key" => {
+                            let mut key_name = String::new();
+                            for attr in e.attributes() {
+                                let attr = attr?;
+                                let key = str::from_utf8(attr.key.as_ref())?;
+                                let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                if key == "name" {
+                                    key_name = value;
+                                }
+                            }
+                            if !key_name.is_empty() {
+                                schema.key_constraints.insert(key_name, Vec::new());
+                            }
+                        }
+                        "keyref" => {
+                            let mut keyref_name = String::new();
+                            let mut refer = String::new();
+                            for attr in e.attributes() {
+                                let attr = attr?;
+                                let key = str::from_utf8(attr.key.as_ref())?;
+                                let value = attr.decode_and_unescape_value(&reader)?.to_string();
+                                match key {
+                                    "name" => keyref_name = value,
+                                    "refer" => refer = value,
+                                    _ => {}
+                                }
+                            }
+                            if !keyref_name.is_empty() {
+                                schema.keyref_constraints.insert(keyref_name, refer);
                             }
                         }
                         "attribute" => {

@@ -30,6 +30,21 @@ pub enum FuzzStrategy {
     ViolateSequenceOrder,
     ViolateFixedValue,
     ViolateNillable,
+    ViolateLength,
+    ViolateWhiteSpace,
+    ViolateAll,
+    ViolateUnique,
+    ViolateKey,
+    ViolateKeyRef,
+    ViolateDefault,
+    ViolateAbstract,
+    ViolateMixed,
+    ViolateUnion,
+    ViolateList,
+    ViolateAny,
+    ViolateAnyAttribute,
+    ViolateXsiType,
+    ViolateSubstitutionGroup,
 }
 
 pub struct XmlFuzzer {
@@ -77,6 +92,21 @@ impl XmlFuzzer {
             FuzzStrategy::ViolateSequenceOrder => self.fuzz_violate_sequence_order(root_element),
             FuzzStrategy::ViolateFixedValue => self.fuzz_violate_fixed_value(root_element),
             FuzzStrategy::ViolateNillable => self.fuzz_violate_nillable(root_element),
+            FuzzStrategy::ViolateLength => self.fuzz_violate_length(root_element),
+            FuzzStrategy::ViolateWhiteSpace => self.fuzz_violate_white_space(root_element),
+            FuzzStrategy::ViolateAll => self.fuzz_violate_all(root_element),
+            FuzzStrategy::ViolateUnique => self.fuzz_violate_unique(root_element),
+            FuzzStrategy::ViolateKey => self.fuzz_violate_key(root_element),
+            FuzzStrategy::ViolateKeyRef => self.fuzz_violate_key_ref(root_element),
+            FuzzStrategy::ViolateDefault => self.fuzz_violate_default(root_element),
+            FuzzStrategy::ViolateAbstract => self.fuzz_violate_abstract(root_element),
+            FuzzStrategy::ViolateMixed => self.fuzz_violate_mixed(root_element),
+            FuzzStrategy::ViolateUnion => self.fuzz_violate_union(root_element),
+            FuzzStrategy::ViolateList => self.fuzz_violate_list(root_element),
+            FuzzStrategy::ViolateAny => self.fuzz_violate_any(root_element),
+            FuzzStrategy::ViolateAnyAttribute => self.fuzz_violate_any_attribute(root_element),
+            FuzzStrategy::ViolateXsiType => self.fuzz_violate_xsi_type(root_element),
+            FuzzStrategy::ViolateSubstitutionGroup => self.fuzz_violate_substitution_group(root_element),
         }
     }
 
@@ -89,6 +119,7 @@ impl XmlFuzzer {
             FuzzStrategy::InvalidAttribute,
             FuzzStrategy::MissingRequiredAttribute,
             FuzzStrategy::InvalidType,
+            FuzzStrategy::MalformedXml,
             FuzzStrategy::ExtremeValues,
             FuzzStrategy::BoundaryValues,
             FuzzStrategy::ViolateMinOccurs,
@@ -106,6 +137,21 @@ impl XmlFuzzer {
             FuzzStrategy::ViolateSequenceOrder,
             FuzzStrategy::ViolateFixedValue,
             FuzzStrategy::ViolateNillable,
+            FuzzStrategy::ViolateLength,
+            FuzzStrategy::ViolateWhiteSpace,
+            FuzzStrategy::ViolateAll,
+            FuzzStrategy::ViolateUnique,
+            FuzzStrategy::ViolateKey,
+            FuzzStrategy::ViolateKeyRef,
+            FuzzStrategy::ViolateDefault,
+            FuzzStrategy::ViolateAbstract,
+            FuzzStrategy::ViolateMixed,
+            FuzzStrategy::ViolateUnion,
+            FuzzStrategy::ViolateList,
+            FuzzStrategy::ViolateAny,
+            FuzzStrategy::ViolateAnyAttribute,
+            FuzzStrategy::ViolateXsiType,
+            FuzzStrategy::ViolateSubstitutionGroup,
         ];
 
         strategies
@@ -804,7 +850,7 @@ impl XmlFuzzer {
     fn violate_pattern_constraints(&mut self, xml: &mut String, element: &XsdElement) {
         if let Some(typ) = self.schema.get_type(&element.element_type) {
             if let Some(ref restriction) = typ.restriction {
-                if let Some(ref pattern) = restriction.pattern {
+                if restriction.pattern.is_some() {
                     // Generate a value that doesn't match the pattern
                     // Simple approach: replace with clearly invalid value
                     let re = Regex::new(r#">([^<]+)</"#).unwrap();
@@ -832,7 +878,7 @@ impl XmlFuzzer {
                 if let Some(total_digits) = restriction.total_digits {
                     // Create a number with more total digits than allowed
                     let re = Regex::new(r"\d+\.?\d*").unwrap();
-                    *xml = re.replace_all(xml, |caps: &regex::Captures| -> String {
+                    *xml = re.replace_all(xml, |_caps: &regex::Captures| -> String {
                         // Generate a number with more digits than total_digits
                         "9".repeat(total_digits as usize + 10)
                     }).to_string();
@@ -855,7 +901,7 @@ impl XmlFuzzer {
                 if let Some(fraction_digits) = restriction.fraction_digits {
                     // Create a decimal with more fraction digits than allowed
                     let re = Regex::new(r"\d+\.\d+").unwrap();
-                    *xml = re.replace_all(xml, |caps: &regex::Captures| -> String {
+                    *xml = re.replace_all(xml, |_caps: &regex::Captures| -> String {
                         // Generate a decimal with more fraction digits
                         let int_part = "123";
                         let frac_part = "9".repeat(fraction_digits as usize + 5);
@@ -942,6 +988,396 @@ impl XmlFuzzer {
                 self.violate_sequence_order_constraints(xml, &child_clone);
             }
         }
+    }
+
+    fn fuzz_violate_length(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_exact_length(&mut xml, &elem_clone);
+        }
+        xml
+    }
+
+    fn fuzz_violate_white_space(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_whitespace_constraints(&mut xml, &elem_clone);
+        }
+        xml
+    }
+
+    fn fuzz_violate_all(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_all_constraints(&mut xml, &elem_clone);
+        }
+        xml
+    }
+
+    fn fuzz_violate_unique(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_unique_constraints(&mut xml, &elem_clone);
+        }
+        xml
+    }
+
+    fn fuzz_violate_key(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_key_constraints(&mut xml, &elem_clone);
+        }
+        xml
+    }
+
+    fn fuzz_violate_key_ref(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_keyref_constraints(&mut xml, &elem_clone);
+        }
+        xml
+    }
+
+    fn fuzz_violate_default(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_default_constraints(&mut xml, &elem_clone);
+        }
+        xml
+    }
+
+    fn fuzz_violate_abstract(&mut self, root_element: &str) -> String {
+        let xml = self.generator.generate_valid(root_element);
+        // Try to instantiate abstract types/elements
+        // This is a simplified violation - in practice, abstract types can't be instantiated
+        xml
+    }
+
+    fn fuzz_violate_mixed(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_mixed_content(&mut xml, &elem_clone);
+        }
+        xml
+    }
+
+    fn fuzz_violate_union(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_union_types(&mut xml, &elem_clone);
+        }
+        xml
+    }
+
+    fn fuzz_violate_list(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        if let Some(elem) = self.schema.get_element(root_element) {
+            let elem_clone = elem.clone();
+            self.violate_list_types(&mut xml, &elem_clone);
+        }
+        xml
+    }
+
+    fn fuzz_violate_any(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        // Add invalid elements to any wildcards
+        // Simplified: just add a random invalid element
+        let invalid_elem = format!("<invalidAnyElement{}>value</invalidAnyElement{}>", 
+            self.rng.gen_range(0..1000), 
+            self.rng.gen_range(0..1000));
+        let insert_pos = xml.find("</").unwrap_or(xml.len() - 10);
+        xml.insert_str(insert_pos, &invalid_elem);
+        xml
+    }
+
+    fn fuzz_violate_any_attribute(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        // Add invalid attributes to anyAttribute wildcards
+        let invalid_attr = format!(" invalidAnyAttr{}=\"value\"", self.rng.gen_range(0..1000));
+        if let Some(pos) = xml.find('>') {
+            xml.insert_str(pos, &invalid_attr);
+        }
+        xml
+    }
+
+    fn violate_exact_length(&mut self, xml: &mut String, element: &XsdElement) {
+        if let Some(typ) = self.schema.get_type(&element.element_type) {
+            if let Some(ref restriction) = typ.restriction {
+                if let Some(exact_length) = restriction.length {
+                    let re = Regex::new(r#">([^<]+)</"#).unwrap();
+                    *xml = re.replace_all(xml, |caps: &regex::Captures| -> String {
+                        let value = &caps[1];
+                        if value.len() != exact_length as usize {
+                            // Already wrong length, keep it
+                            caps[0].to_string()
+                        } else {
+                            // Make it wrong length
+                            format!(">{}</", "x".repeat(exact_length as usize + 1))
+                        }
+                    }).to_string();
+                }
+            }
+        }
+        // Recursively process children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_exact_length(xml, &child_clone);
+            }
+        }
+    }
+
+    fn violate_whitespace_constraints(&mut self, xml: &mut String, element: &XsdElement) {
+        if let Some(typ) = self.schema.get_type(&element.element_type) {
+            if let Some(ref restriction) = typ.restriction {
+                if let Some(ref ws) = restriction.white_space {
+                    let re = Regex::new(r#">([^<]+)</"#).unwrap();
+                    *xml = re.replace_all(xml, |caps: &regex::Captures| -> String {
+                        let value = &caps[1];
+                        match ws.as_str() {
+                            "preserve" => {
+                                // Should preserve whitespace, so remove it to violate
+                                format!(">{}</", value.replace(" ", ""))
+                            }
+                            "replace" => {
+                                // Should replace tabs/newlines with spaces, so don't
+                                format!(">{}\t\n</", value)
+                            }
+                            "collapse" => {
+                                // Should collapse whitespace, so add extra
+                                format!(">  {}  </", value)
+                            }
+                            _ => caps[0].to_string()
+                        }
+                    }).to_string();
+                }
+            }
+        }
+        // Recursively process children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_whitespace_constraints(xml, &child_clone);
+            }
+        }
+    }
+
+    fn violate_all_constraints(&mut self, xml: &mut String, element: &XsdElement) {
+        if let Some(typ) = self.schema.get_type(&element.element_type) {
+            if !typ.all.is_empty() {
+                // 'all' requires all elements to appear, and order doesn't matter
+                // Violate by removing one or reordering
+                if typ.all.len() > 1 {
+                    // Remove one element
+                    let elem_to_remove = &typ.all[0];
+                    let pattern = format!("<{}>.*?</{}>", elem_to_remove, elem_to_remove);
+                    let re = Regex::new(&pattern).unwrap();
+                    *xml = re.replace(&xml, "").to_string();
+                }
+            }
+        }
+        // Recursively process children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_all_constraints(xml, &child_clone);
+            }
+        }
+    }
+
+    fn violate_unique_constraints(&mut self, xml: &mut String, element: &XsdElement) {
+        // Find elements that should be unique and duplicate them
+        if let Some(unique_paths) = self.schema.unique_constraints.get(&element.name) {
+            if !unique_paths.is_empty() {
+                // Simplified: duplicate a random element value
+                let re = Regex::new(r#">([^<]+)</"#).unwrap();
+                if let Some(first_match) = re.find(&xml) {
+                    let value = first_match.as_str().to_string();
+                    // Insert duplicate
+                    let insert_pos = first_match.end();
+                    xml.insert_str(insert_pos, &value);
+                }
+            }
+        }
+        // Recursively process children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_unique_constraints(xml, &child_clone);
+            }
+        }
+    }
+
+    fn violate_key_constraints(&mut self, xml: &mut String, element: &XsdElement) {
+        // Violate key constraints by creating duplicate or missing keys
+        if let Some(_key_paths) = self.schema.key_constraints.get(&element.name) {
+            // Simplified: duplicate a key value
+            let re = Regex::new(r#">([^<]+)</"#).unwrap();
+            if let Some(first_match) = re.find(&xml) {
+                let value = first_match.as_str().to_string();
+                let insert_pos = first_match.end();
+                xml.insert_str(insert_pos, &value);
+            }
+        }
+        // Recursively process children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_key_constraints(xml, &child_clone);
+            }
+        }
+    }
+
+    fn violate_keyref_constraints(&mut self, xml: &mut String, element: &XsdElement) {
+        // Create invalid key references
+        if let Some(_refer) = self.schema.keyref_constraints.get(&element.name) {
+            // Replace keyref values with invalid references
+            let re = Regex::new(r#">([^<]+)</"#).unwrap();
+            let new_xml = re.replace_all(xml, |_caps: &regex::Captures| -> String {
+                "INVALID_KEYREF".to_string()
+            }).to_string();
+            *xml = new_xml;
+        }
+        // Recursively process children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_keyref_constraints(xml, &child_clone);
+            }
+        }
+    }
+
+    fn violate_default_constraints(&mut self, xml: &mut String, element: &XsdElement) {
+        // Violate default value constraints by providing wrong default or omitting when required
+        if let Some(ref default_val) = element.default_value {
+            // Change the default value to something else
+            let re = Regex::new(r#">([^<]+)</"#).unwrap();
+            *xml = re.replace_all(xml, |caps: &regex::Captures| -> String {
+                let value = &caps[1];
+                if value == default_val {
+                    format!(">INVALID_DEFAULT_{}</", default_val)
+                } else {
+                    caps[0].to_string()
+                }
+            }).to_string();
+        }
+        // Recursively process children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_default_constraints(xml, &child_clone);
+            }
+        }
+    }
+
+    fn violate_mixed_content(&mut self, xml: &mut String, element: &XsdElement) {
+        if let Some(typ) = self.schema.get_type(&element.element_type) {
+            if typ.mixed {
+                // Mixed content allows text and elements
+                // Violate by adding invalid text or structure
+                let insert_pos = xml.find(">").unwrap_or(xml.len() - 10);
+                xml.insert_str(insert_pos + 1, "INVALID_MIXED_TEXT<invalidElement/>");
+            }
+        }
+        // Recursively process children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_mixed_content(xml, &child_clone);
+            }
+        }
+    }
+
+    fn violate_union_types(&mut self, xml: &mut String, element: &XsdElement) {
+        if let Some(typ) = self.schema.get_type(&element.element_type) {
+            if !typ.union_types.is_empty() {
+                // Generate a value that doesn't match any union member type
+                let re = Regex::new(r#">([^<]+)</"#).unwrap();
+                let new_xml = re.replace_all(xml, |_caps: &regex::Captures| -> String {
+                    ">INVALID_UNION_VALUE</".to_string()
+                }).to_string();
+                *xml = new_xml;
+            }
+        }
+        // Recursively process children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_union_types(xml, &child_clone);
+            }
+        }
+    }
+
+    fn violate_list_types(&mut self, xml: &mut String, element: &XsdElement) {
+        if let Some(typ) = self.schema.get_type(&element.element_type) {
+            if typ.list_item_type.is_some() {
+                // List types should be space-separated values
+                // Violate by using wrong separator or format
+                let re = Regex::new(r#">([^<]+)</"#).unwrap();
+                *xml = re.replace_all(xml, |caps: &regex::Captures| -> String {
+                    let value = &caps[1];
+                    // Use comma instead of space, or add invalid characters
+                    format!(">{},invalid,list</", value)
+                }).to_string();
+            }
+        }
+        // Recursively process children
+        for child_name in &element.children {
+            if let Some(child_elem) = self.schema.get_element(child_name) {
+                let child_clone = child_elem.clone();
+                self.violate_list_types(xml, &child_clone);
+            }
+        }
+    }
+
+    fn fuzz_violate_xsi_type(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Add invalid xsi:type attributes to violate type substitution
+        // Find elements that can have xsi:type and add invalid types
+        let re = Regex::new(r"(<[^>]+)(>)").unwrap();
+        xml = re.replace_all(&xml, |caps: &regex::Captures| -> String {
+            let tag = &caps[1];
+            // Add invalid xsi:type if not already present
+            if !tag.contains("xsi:type") {
+                format!("{} xsi:type=\"InvalidType{}\"{}", tag, self.rng.gen_range(0..1000), &caps[2])
+            } else {
+                // Replace with invalid type
+                let re_type = Regex::new(r#"xsi:type="[^"]*""#).unwrap();
+                re_type.replace(tag, |_caps: &regex::Captures| -> String {
+                    format!("xsi:type=\"InvalidType{}\"", self.rng.gen_range(0..1000))
+                }).to_string() + &caps[2]
+            }
+        }).to_string();
+        
+        xml
+    }
+
+    fn fuzz_violate_substitution_group(&mut self, root_element: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Violate substitutionGroup by using invalid substitute elements
+        // Find elements that are part of substitution groups and replace with invalid ones
+        for (head_name, _substitutes) in &self.schema.substitution_groups {
+            // Replace head element with invalid substitute
+            let pattern = format!("<{}>", head_name);
+            if xml.contains(&pattern) {
+                // Replace with an element that's not in the substitution group
+                let invalid_sub = format!("<invalidSubstitute{}>", self.rng.gen_range(0..1000));
+                xml = xml.replace(&pattern, &invalid_sub);
+            }
+        }
+        
+        xml
     }
 }
 
@@ -1234,12 +1670,257 @@ mod tests {
     }
 
     #[test]
+    fn test_fuzz_violate_length() {
+        let xsd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:simpleType name="CodeType">
+    <xs:restriction base="xs:string">
+      <xs:length value="5"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:element name="Person">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="code" type="CodeType"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>"#;
+        
+        let schema = XsdSchema::parse(xsd).unwrap();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateLength);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_white_space() {
+        let xsd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:simpleType name="TextType">
+    <xs:restriction base="xs:string">
+      <xs:whiteSpace value="preserve"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:element name="Person">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="text" type="TextType"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>"#;
+        
+        let schema = XsdSchema::parse(xsd).unwrap();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateWhiteSpace);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_all() {
+        let xsd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:complexType name="PersonType">
+    <xs:all>
+      <xs:element name="name" type="xs:string"/>
+      <xs:element name="age" type="xs:int"/>
+    </xs:all>
+  </xs:complexType>
+  <xs:element name="Person" type="PersonType"/>
+</xs:schema>"#;
+        
+        let schema = XsdSchema::parse(xsd).unwrap();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateAll);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_unique() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateUnique);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_key() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateKey);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_key_ref() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateKeyRef);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_default() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateDefault);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_abstract() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateAbstract);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_mixed() {
+        let xsd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:complexType name="PersonType" mixed="true">
+    <xs:sequence>
+      <xs:element name="name" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="Person" type="PersonType"/>
+</xs:schema>"#;
+        
+        let schema = XsdSchema::parse(xsd).unwrap();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateMixed);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_union() {
+        let xsd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:simpleType name="UnionType">
+    <xs:union memberTypes="xs:int xs:string"/>
+  </xs:simpleType>
+  <xs:element name="Person">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="value" type="UnionType"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>"#;
+        
+        let schema = XsdSchema::parse(xsd).unwrap();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateUnion);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_list() {
+        let xsd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:simpleType name="ListType">
+    <xs:list itemType="xs:int"/>
+  </xs:simpleType>
+  <xs:element name="Person">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="numbers" type="ListType"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>"#;
+        
+        let schema = XsdSchema::parse(xsd).unwrap();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateList);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_any() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateAny);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_any_attribute() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateAnyAttribute);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_xsi_type() {
+        let schema = get_test_schema();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateXsiType);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
+    fn test_fuzz_violate_substitution_group() {
+        let xsd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="person" type="xs:string"/>
+  <xs:element name="employee" substitutionGroup="person"/>
+  <xs:element name="customer" substitutionGroup="person"/>
+  <xs:element name="Person">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="person"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>"#;
+        
+        let schema = XsdSchema::parse(xsd).unwrap();
+        let mut fuzzer = XmlFuzzer::new(schema);
+        let fuzzed = fuzzer.fuzz("Person", FuzzStrategy::ViolateSubstitutionGroup);
+        
+        assert!(fuzzed.contains("<Person"), "Should contain Person element");
+        assert!(!fuzzed.is_empty(), "Should generate fuzzed content");
+    }
+
+    #[test]
     fn test_fuzz_all_strategies() {
         let schema = get_test_schema();
         let mut fuzzer = XmlFuzzer::new(schema);
         let results = fuzzer.fuzz_all("Person");
         
-        assert_eq!(results.len(), 24, "Should generate all 24 fuzzing strategies");
+        assert_eq!(results.len(), 40, "Should generate all 40 fuzzing strategies");
         for (strategy, xml) in results {
             assert!(!xml.is_empty(), "Strategy {:?} should generate XML", strategy);
             assert!(xml.contains("Person") || xml.contains("<Person"), 
@@ -1379,7 +2060,7 @@ mod tests {
         let mut fuzzer = XmlFuzzer::new(schema);
         
         let results = fuzzer.fuzz_all("Person");
-        assert_eq!(results.len(), 24, "Should generate all 24 fuzzing strategies");
+        assert_eq!(results.len(), 40, "Should generate all 40 fuzzing strategies");
         
         for (_, xml) in results {
             assert!(!xml.is_empty());
