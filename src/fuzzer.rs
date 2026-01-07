@@ -1745,6 +1745,62 @@ impl XmlFuzzer {
         xml
     }
 
+    /// Violate sequence order on a specific target element
+    fn fuzz_violate_sequence_order_target(&mut self, root_element: &str, target_path: &str) -> String {
+        let mut xml = self.generator.generate_valid(root_element);
+        
+        // Extract element name from target path (e.g., "Person/address" -> "address")
+        let element_name = target_path.split('/').last().unwrap_or(target_path);
+        
+        // Find the target element in the schema
+        if let Some(elem) = self.schema.get_element(element_name) {
+            // Check if this element has a complex type with a sequence
+            let type_name = elem.element_type.split(':').last().unwrap_or(&elem.element_type);
+            if let Some(typ) = self.schema.get_type(type_name) {
+                if !typ.sequence.is_empty() && typ.sequence.len() > 1 {
+                    // Find the target element in the XML and swap its children
+                    // Pattern to match the entire element with its children
+                    let pattern = format!(r"(<{}[^>]*>)(.*?)(</{}>)", element_name, element_name);
+                    let re = Regex::new(&pattern).unwrap();
+                    
+                    if let Some(caps) = re.captures(&xml) {
+                        let opening_tag = &caps[1];
+                        let children_content = &caps[2];
+                        let closing_tag = &caps[3];
+                        
+                        // Try to swap the first two child elements
+                        let elem1 = &typ.sequence[0];
+                        let elem2 = &typ.sequence[1];
+                        
+                        // Pattern to match each child element
+                        let child_pattern1 = format!(r"(<{}[^>]*>.*?</{}>)", elem1, elem1);
+                        let child_pattern2 = format!(r"(<{}[^>]*>.*?</{}>)", elem2, elem2);
+                        let re1 = Regex::new(&child_pattern1).unwrap();
+                        let re2 = Regex::new(&child_pattern2).unwrap();
+                        
+                        // Find matches in the children content
+                        if let (Some(m1), Some(m2)) = (re1.find(children_content), re2.find(children_content)) {
+                            if m1.start() < m2.start() {
+                                // Swap them
+                                let val1 = m1.as_str().to_string();
+                                let val2 = m2.as_str().to_string();
+                                let mut new_children = children_content.replace(m1.as_str(), "TEMP_PLACEHOLDER_1");
+                                new_children = new_children.replace(m2.as_str(), &val1);
+                                new_children = new_children.replace("TEMP_PLACEHOLDER_1", &val2);
+                                
+                                // Reconstruct the XML with swapped children
+                                let new_element = format!("{}{}{}", opening_tag, new_children, closing_tag);
+                                xml = re.replace(&xml, new_element.as_str()).to_string();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        xml
+    }
+
     fn fuzz_violate_fixed_value(&mut self, root_element: &str) -> String {
         let mut xml = self.generator.generate_valid(root_element);
         
